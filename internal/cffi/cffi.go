@@ -450,8 +450,8 @@ func FormatIdentityAddress(networkByte uint8, accountKeyHex, viewOnlyKeyHex, pay
 	var cPayRef *C.char
 	if payRefHex != "" {
 		cPayRef = C.CString(payRefHex)
-		defer C.free(unsafe.Pointer(cPayRef))
 	}
+	defer C.free(unsafe.Pointer(cPayRef))
 
 	env := consume(C.ootle_format_identity_address(C.uint8_t(networkByte), cAccount, cView, cPayRef))
 	if !env.ok {
