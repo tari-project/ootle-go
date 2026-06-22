@@ -1,0 +1,113 @@
+name: native-libs
+
+# Maintainer workflow: re-vendor the prebuilt native libs for every platform from a
+# tari-ootle RELEASE, verify each links + passes golden vectors, then open a PR committing
+# all of them together. See docs/native-lib.md.
+#
+# Source of truth is the per-platform zip that tari-ootle's `ffi_libs.yml` attaches to the
+# release (static .a + shared lib + header, checksummed). This workflow only downloads,
+# verifies, and vendors them — no Rust toolchain, no monorepo checkout, no monorepo token.
+# To regenerate from monorepo *source* instead, build locally with `make native`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: tari-ootle release tag to vendor (e.g. v0.1.0)
+        required: true
+      monorepo_repo:
+        description: tari-ootle repository (owner/name)
+        required: false
+        default: tari-project/tari-ootle
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # tari_platform is the asset's platform token in ffi_libs.yml; goos/goarch is the
+        # vendored dir cgo links against. linux-x86_64-musl is intentionally omitted — Go's
+        # GOOS/GOARCH can't distinguish musl from glibc, so the glibc linux_amd64 lib is the
+        # one ootle-go vendors. Each row verifies on a runner matching its lib.
+        include:
+          - { goos: darwin,  goarch: arm64, tari_platform: macos-arm64,  runner: macos-14 }
+          - { goos: darwin,  goarch: amd64, tari_platform: macos-x86_64, runner: macos-15-intel }
+          - { goos: linux,   goarch: amd64, tari_platform: linux-x86_64, runner: ubuntu-latest }
+          - { goos: linux,   goarch: arm64, tari_platform: linux-arm64,  runner: ubuntu-24.04-arm }
+          - { goos: windows, goarch: amd64, tari_platform: windows-x64,  runner: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout ootle-go
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vendor lib from release asset
+        env:
+          GH_TOKEN: ${{ secrets.MONOREPO_TOKEN || github.token }}
+        run: |
+          ./scripts/vendor_release.sh \
+            --tari-platform "${{ matrix.tari_platform }}" \
+            --goos "${{ matrix.goos }}" \
+            --goarch "${{ matrix.goarch }}" \
+            --tag "${{ inputs.release_tag }}" \
+            --repo "${{ inputs.monorepo_repo }}"
+
+      - name: Verify (build + golden vectors)
+        run: |
+          go build ./...
+          go test ./ootle/ -run 'TestGoldenVectors|TestFixtureDrift|TestGoldenVectors_CoverageParity' -count=1
+
+      - name: Upload lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: lib-${{ matrix.goos }}_${{ matrix.goarch }}
+          # The shared header is identical across platforms; include it so the aggregate job
+          # can refresh it (it changes on an ABI bump). Paths keep their tree under lib/.
+          path: |
+            internal/cffi/lib/${{ matrix.goos }}_${{ matrix.goarch }}/
+            internal/cffi/lib/ootle_sdk.h
+
+  aggregate:
+    name: Commit all platforms
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all libs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: lib-*
+          path: artifacts
+
+      - name: Place libs + regenerate provenance
+        run: |
+          for d in artifacts/lib-*; do
+            cp -rf "$d/." internal/cffi/lib/
+          done
+          ./scripts/gen_provenance.sh
+
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: native-libs/${{ inputs.release_tag }}
+          title: "Native libs from tari-ootle@${{ inputs.release_tag }}"
+          body: |
+            Re-vendored prebuilt native libs for all platforms from release
+            `${{ inputs.monorepo_repo }}@${{ inputs.release_tag }}` (downloaded + checksum-verified
+            from the `ffi_libs.yml` assets, not built from source).
+
+            Each platform built + verified (golden vectors) on its native runner.
+            If the ABI changed, bump `ExpectedABIVersion` in `internal/cffi/cffi.go`.
+          add-paths: internal/cffi/lib/
