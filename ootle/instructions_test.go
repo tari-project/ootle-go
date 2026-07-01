@@ -216,20 +216,31 @@ func TestFaucetTakeFreeCoinsDepositComposesTestTemplateSequence(t *testing.T) {
 // --- the generic entry point reuses the apply/seal surface (no new lifecycle) ------------------------
 
 // genericFixture mirrors a committed generic_build/* vector (the generic_intent is held raw and handed
-// to the C ABI verbatim — the host never re-encodes args).
+// to the C ABI verbatim — the host never re-encodes args). Since ABI ootle-sdk-ffi-c/16 the seal signs
+// with a random nonce, so the vector no longer pins expected.encoded_transaction / transaction_id; the
+// tests assert the sealed envelope is well-formed instead.
 type genericFixture struct {
 	Operation string `json:"operation"`
 	Input     struct {
 		Network       Network                     `json:"network"`
-		Keys          DeterministicTransferKeys   `json:"keys"`
+		Keys          PublicTransferKeys          `json:"keys"`
 		Fetched       []transport.FetchedSubstate `json:"fetched"`
 		GenericIntent json.RawMessage             `json:"generic_intent"`
 		FaucetIntent  json.RawMessage             `json:"faucet_intent"`
 	} `json:"input"`
-	Expected struct {
-		EncodedTransaction string `json:"encoded_transaction"`
-		TransactionID      string `json:"transaction_id"`
-	} `json:"expected"`
+}
+
+// assertWellFormedEnc asserts a sealed envelope is structurally valid: a non-empty lowercase-hex
+// encoded_transaction and a 64-hex-char transaction_id. The random-nonce seal is not
+// byte-reproducible, so this is the strongest still-true check for these two-phase encode tests.
+func assertWellFormedEnc(t *testing.T, encoded EncodedPublicTransfer) {
+	t.Helper()
+	if !isLowerHex(encoded.EncodedTransaction) {
+		t.Errorf("encoded_transaction is not non-empty lowercase hex: %q", encoded.EncodedTransaction)
+	}
+	if len(encoded.TransactionID) != 64 || !isLowerHex(encoded.TransactionID) {
+		t.Errorf("transaction_id is not 32-byte (64 lowercase-hex-char): %q", encoded.TransactionID)
+	}
 }
 
 func loadGenericFixture(t *testing.T, rel string) genericFixture {
@@ -248,8 +259,8 @@ func loadGenericFixture(t *testing.T, rel string) genericFixture {
 
 // TestBuildUnsignedInstructionsHandleDrivesExistingApplySeal proves the generic build's handle is
 // interchangeable with the public path: BuildUnsignedInstructions → ApplyFetchedSubstates →
-// SealAndEncode reproduces the committed vector byte-for-byte. There are no generic apply/seal wrappers
-// — the generic entry point's handle is a public handle.
+// SealAndEncode drives a well-formed sealed transaction. There are no generic apply/seal wrappers —
+// the generic entry point's handle is a public handle.
 func TestBuildUnsignedInstructionsHandleDrivesExistingApplySeal(t *testing.T) {
 	fx := loadGenericFixture(t, "generic_build/call_method_transfer.json")
 	if fx.Operation != opBuildAndEncodeInstructions {
@@ -287,7 +298,7 @@ func TestBuildUnsignedInstructionsHandleDrivesExistingApplySeal(t *testing.T) {
 		t.Fatalf("expected resolved, got %q", res.Status)
 	}
 
-	encodedJSON, err := cffi.SealAndEncodeWithSeed(handle, string(keysJSON))
+	encodedJSON, err := cffi.SealAndEncode(handle, string(keysJSON))
 	handle = nil
 	if err != nil {
 		t.Fatalf("SealAndEncode: %v", err)
@@ -296,19 +307,13 @@ func TestBuildUnsignedInstructionsHandleDrivesExistingApplySeal(t *testing.T) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("unmarshal encoded transfer: %v", uerr)
 	}
-	if encoded.EncodedTransaction != fx.Expected.EncodedTransaction {
-		t.Errorf("encoded_transaction mismatch:\n got:  %s\n want: %s", encoded.EncodedTransaction, fx.Expected.EncodedTransaction)
-	}
-	if encoded.TransactionID != fx.Expected.TransactionID {
-		t.Errorf("transaction_id mismatch:\n got:  %s\n want: %s", encoded.TransactionID, fx.Expected.TransactionID)
-	}
+	assertWellFormedEnc(t, encoded)
 }
 
 // TestFaucetTakeIntentReproducesGoldenVector proves the Go-builder-assembled faucet claim — not just the
-// raw fixture JSON — is accepted by the core and reproduces the committed faucet_claim vector
-// byte-for-byte. It assembles via Faucet().Take().Intent(), asserts the builder's FaucetClaimIntent
-// matches the fixture's faucet_intent shape, then drives BuildFaucetClaim → ApplyFetchedSubstates →
-// SealAndEncodeWithSeed.
+// raw fixture JSON — is accepted by the core and drives a well-formed sealed transaction. It assembles
+// via Faucet().Take().Intent(), asserts the builder's FaucetClaimIntent matches the fixture's
+// faucet_intent shape, then drives BuildFaucetClaim → ApplyFetchedSubstates → SealAndEncode.
 func TestFaucetTakeIntentReproducesGoldenVector(t *testing.T) {
 	fx := loadGenericFixture(t, "generic_build/faucet_claim.json")
 
@@ -367,7 +372,7 @@ func TestFaucetTakeIntentReproducesGoldenVector(t *testing.T) {
 		t.Fatalf("expected resolved, got %q", res.Status)
 	}
 
-	encodedJSON, err := cffi.SealAndEncodeWithSeed(handle, string(keysJSON))
+	encodedJSON, err := cffi.SealAndEncode(handle, string(keysJSON))
 	handle = nil
 	if err != nil {
 		t.Fatalf("SealAndEncode: %v", err)
@@ -376,12 +381,7 @@ func TestFaucetTakeIntentReproducesGoldenVector(t *testing.T) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("unmarshal encoded transfer: %v", uerr)
 	}
-	if encoded.EncodedTransaction != fx.Expected.EncodedTransaction {
-		t.Errorf("encoded_transaction mismatch:\n got:  %s\n want: %s", encoded.EncodedTransaction, fx.Expected.EncodedTransaction)
-	}
-	if encoded.TransactionID != fx.Expected.TransactionID {
-		t.Errorf("transaction_id mismatch:\n got:  %s\n want: %s", encoded.TransactionID, fx.Expected.TransactionID)
-	}
+	assertWellFormedEnc(t, encoded)
 }
 
 // TestBuildUnsignedInstructionsBadIntentIsParseError proves a malformed intent surfaces the stable

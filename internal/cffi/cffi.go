@@ -34,7 +34,7 @@ import (
 // ExpectedABIVersion is the frozen ABI tag the vendored lib must report. A mismatch
 // means the vendored lib drifted from this wrapper — fail loudly rather than
 // mis-marshal. Keep in sync with `ootle_abi_version()` in ootle_sdk.h.
-const ExpectedABIVersion = "ootle-sdk-ffi-c/15"
+const ExpectedABIVersion = "ootle-sdk-ffi-c/16"
 
 var (
 	abiOnce sync.Once
@@ -150,25 +150,6 @@ func BuildAndEncodePublicTransfer(networkByte uint8, intentJSON, keysJSON string
 	return env.dataJSON, nil
 }
 
-// BuildAndEncodePublicTransferWithSeed wraps the seed-reproducible counterpart. keysJSON is
-// {account_secret, seed [, seal_secret]}. The bytes/id are reproducible byte-for-byte from the
-// seed + intent.
-func BuildAndEncodePublicTransferWithSeed(networkByte uint8, intentJSON, keysJSON string) (string, error) {
-	if err := ensureABI(); err != nil {
-		return "", err
-	}
-	cIntent := C.CString(intentJSON)
-	defer C.free(unsafe.Pointer(cIntent))
-	cKeys := C.CString(keysJSON)
-	defer C.free(unsafe.Pointer(cKeys))
-
-	env := consume(C.ootle_build_and_encode_public_transfer_with_seed(C.uint8_t(networkByte), cIntent, cKeys))
-	if !env.ok {
-		return "", env.asError()
-	}
-	return env.dataJSON, nil
-}
-
 // BuildUnsigned wraps ootle_build_unsigned (phase 1). On success it returns a fresh
 // Handle (caller owns it — must consume it via Apply/Seal or free via FreeHandle) and
 // the want-list data JSON.
@@ -276,27 +257,6 @@ func SealAndEncode(h *Handle, keysJSON string) (string, error) {
 	ptr := h.ptr
 	h.ptr = nil
 	env := consume(C.ootle_seal_and_encode(ptr, cKeys))
-	if !env.ok {
-		return "", env.asError()
-	}
-	return env.dataJSON, nil
-}
-
-// SealAndEncodeWithSeed wraps the seed-reproducible counterpart. CONSUMES the handle. keysJSON is
-// {account_secret, seed [, seal_secret]}; the bytes/id are reproducible byte-for-byte.
-func SealAndEncodeWithSeed(h *Handle, keysJSON string) (string, error) {
-	if err := ensureABI(); err != nil {
-		return "", err
-	}
-	if h == nil || h.ptr == nil {
-		return "", &Error{Code: "INTERNAL", Message: "SealAndEncodeWithSeed called with a nil/consumed handle"}
-	}
-	cKeys := C.CString(keysJSON)
-	defer C.free(unsafe.Pointer(cKeys))
-
-	ptr := h.ptr
-	h.ptr = nil
-	env := consume(C.ootle_seal_and_encode_with_seed(ptr, cKeys))
 	if !env.ok {
 		return "", env.asError()
 	}
@@ -639,27 +599,6 @@ func SealAndEncodeStealthTransfer(h *StealthHandle, networkByte uint8, keysJSON 
 	return env.dataJSON, nil
 }
 
-// SealAndEncodeStealthTransferWithSeed wraps the seed-reproducible counterpart. keysJSON is
-// {account_secret, seed}; the seed pins the seal nonces. CONSUMES the handle.
-func SealAndEncodeStealthTransferWithSeed(h *StealthHandle, networkByte uint8, keysJSON string) (string, error) {
-	if err := ensureABI(); err != nil {
-		return "", err
-	}
-	if h == nil || h.ptr == nil {
-		return "", &Error{Code: "INTERNAL", Message: "SealAndEncodeStealthTransferWithSeed called with a nil/consumed handle"}
-	}
-	cKeys := C.CString(keysJSON)
-	defer C.free(unsafe.Pointer(cKeys))
-
-	ptr := h.ptr
-	h.ptr = nil
-	env := consume(C.ootle_seal_and_encode_stealth_with_seed(ptr, C.uint8_t(networkByte), cKeys))
-	if !env.ok {
-		return "", env.asError()
-	}
-	return env.dataJSON, nil
-}
-
 // --- stealth receive --------------------------------------------------------------------------
 //
 // The stealth receive (scan) path is stateless and handle-free: a single C call decrypts one
@@ -916,30 +855,6 @@ func SealAndEncodeWithAuth(h *Handle, keysJSON, authorizationsJSON string) (stri
 	ptr := h.ptr
 	h.ptr = nil // the C call consumes it; invalidate our copy first to prevent double-free.
 	env := consume(C.ootle_seal_and_encode_with_auth(ptr, cKeys, cAuths))
-	if !env.ok {
-		return "", env.asError()
-	}
-	return env.dataJSON, nil
-}
-
-// SealAndEncodeWithAuthWithSeed wraps the seed-reproducible counterpart. keysJSON is
-// {account_secret, seed [, seal_secret]}. CONSUMES the handle. The bytes/id are reproducible
-// byte-for-byte.
-func SealAndEncodeWithAuthWithSeed(h *Handle, keysJSON, authorizationsJSON string) (string, error) {
-	if err := ensureABI(); err != nil {
-		return "", err
-	}
-	if h == nil || h.ptr == nil {
-		return "", &Error{Code: "INTERNAL", Message: "SealAndEncodeWithAuthWithSeed called with a nil/consumed handle"}
-	}
-	cKeys := C.CString(keysJSON)
-	defer C.free(unsafe.Pointer(cKeys))
-	cAuths := C.CString(authorizationsJSON)
-	defer C.free(unsafe.Pointer(cAuths))
-
-	ptr := h.ptr
-	h.ptr = nil
-	env := consume(C.ootle_seal_and_encode_with_auth_with_seed(ptr, cKeys, cAuths))
 	if !env.ok {
 		return "", env.asError()
 	}

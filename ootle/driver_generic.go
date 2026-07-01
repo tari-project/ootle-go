@@ -27,23 +27,6 @@ func (c *Client) SendInstructions(ctx context.Context, intent GenericTransaction
 	return c.sendInstructions(ctx, c.network, intent, string(keysJSON), cffi.SealAndEncode)
 }
 
-// --- Deterministic / reproducible-build API -----------------------------------------------------
-//
-// The method below pins a single build seed so the encoded bytes are reproducible byte-for-byte.
-// Production callers want SendInstructions; reach for this only when you need byte parity for an
-// identical build.
-
-// SendInstructionsDeterministic is the seed-reproducible counterpart of SendInstructions; production
-// callers should use SendInstructions. With fixed fetched substates and a pinned seed the sealed
-// bytes/id are reproducible byte-for-byte.
-func (c *Client) SendInstructionsDeterministic(ctx context.Context, intent GenericTransactionIntent, keys DeterministicTransferKeys) (FinalizedResult, error) {
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-	return c.sendInstructions(ctx, c.network, intent, string(keysJSON), cffi.SealAndEncodeWithSeed)
-}
-
 // sendInstructions is the shared generic two-phase driver. It is the generic twin of sendPublicTransfer:
 // identical resolution loop + handle lifetime, only phase 1 differs (the generic build entry point). The
 // returned handle is a HandleKind::Public handle, so ApplyFetchedSubstates / seal consume it unchanged.

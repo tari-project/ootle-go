@@ -128,7 +128,7 @@ func seedStealthAccount(index map[string]transport.FetchedSubstate) {
 // (a) ABI version guard — fails immediately if a stale lib is linked or ExpectedABIVersion does
 // not match the version exposing the current entry-point set (the seed-based, random-default ABI).
 func TestStealthABIVersionIsCurrent(t *testing.T) {
-	const want = "ootle-sdk-ffi-c/15"
+	const want = "ootle-sdk-ffi-c/16"
 	if got := cffi.ABIVersion(); got != want {
 		t.Fatalf("ABI version = %q, want %s (rebuild via make native)", got, want)
 	}
@@ -220,11 +220,11 @@ func TestBuildAndEncodeStealthTransfer_RevealedOnly(t *testing.T) {
 	}
 }
 
-// (c) Mock-transport integration — drive SendStealthTransferDeterministic end-to-end against a
+// (c) Mock-transport integration — drive SendStealthTransfer end-to-end against a
 // mock transport seeded from a stealth-input vector. Asserts: no error; the driver fetched the
 // input UTXO substate id; it submitted a non-empty base64 envelope; and the parsed
 // FinalizedResult is a Commit.
-func TestSendStealthTransferDeterministic_MockTransport(t *testing.T) {
+func TestSendStealthTransfer_MockTransport(t *testing.T) {
 	f := loadStealthFixture(t, "stealth_seal_with_input.json")
 	intent := f.toIntent(t)
 
@@ -263,9 +263,9 @@ func TestSendStealthTransferDeterministic_MockTransport(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	result, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	result, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	if err != nil {
-		t.Fatalf("SendStealthTransferDeterministic: %v", err)
+		t.Fatalf("SendStealthTransfer: %v", err)
 	}
 
 	// The driver fetched exactly the input UTXO substate id (derived from the intent input,
@@ -297,10 +297,10 @@ func TestSendStealthTransferDeterministic_MockTransport(t *testing.T) {
 	}
 }
 
-// TestSendStealthTransferDeterministic_UsesSSEGate proves the stealth send routes through the
+// TestSendStealthTransfer_UsesSSEGate proves the stealth send routes through the
 // shared SSE-preferred wait: it opens the finalization stream and gates on the matching frame
 // rather than going straight to the REST poll.
-func TestSendStealthTransferDeterministic_UsesSSEGate(t *testing.T) {
+func TestSendStealthTransfer_UsesSSEGate(t *testing.T) {
 	f := loadStealthFixture(t, "stealth_seal_with_input.json")
 	intent := f.toIntent(t)
 
@@ -337,8 +337,8 @@ func TestSendStealthTransferDeterministic_UsesSSEGate(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	if _, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys); err != nil {
-		t.Fatalf("SendStealthTransferDeterministic: %v", err)
+	if _, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys); err != nil {
+		t.Fatalf("SendStealthTransfer: %v", err)
 	}
 	if !streamOpened {
 		t.Error("stealth send did not open the finalization stream — it bypassed the shared SSE wait")
@@ -350,7 +350,7 @@ func TestSendStealthTransferDeterministic_UsesSSEGate(t *testing.T) {
 // id in the first apply's fetch_ids, which the driver fetches in a later round. Asserts: the input
 // UTXO is fetched (in a round AFTER the seed round) and the transfer completes as a Commit. This is
 // the Go arm of the C-ABI multi-round convergence test.
-func TestSendStealthTransferDeterministic_MultiRoundFetchLoop(t *testing.T) {
+func TestSendStealthTransfer_MultiRoundFetchLoop(t *testing.T) {
 	f := loadStealthFixture(t, "stealth_seal_with_input.json")
 	intent := f.toIntent(t)
 	if len(intent.Inputs) == 0 {
@@ -385,9 +385,9 @@ func TestSendStealthTransferDeterministic_MultiRoundFetchLoop(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	result, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	result, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	if err != nil {
-		t.Fatalf("SendStealthTransferDeterministic: %v", err)
+		t.Fatalf("SendStealthTransfer: %v", err)
 	}
 
 	// The stealth UTXO want carries NO seed id in the want list (its id is the derived
@@ -434,7 +434,7 @@ func TestSendStealthTransferDeterministic_MultiRoundFetchLoop(t *testing.T) {
 // (d) Revealed-only send (no stealth inputs) still resolves the from-account: it withdraws the
 // revealed input from the account and pays the fee from it, so the driver fetches the account
 // component + its vault (never a stealth UTXO), declares them as inputs, and completes the pipeline.
-func TestSendStealthTransferDeterministic_RevealedOnlyFetchesAccount(t *testing.T) {
+func TestSendStealthTransfer_RevealedOnlyFetchesAccount(t *testing.T) {
 	f := loadStealthFixture(t, "account_key_seal_with_revealed_input.json")
 	intent := f.toIntent(t)
 	if len(intent.Inputs) != 0 {
@@ -461,9 +461,9 @@ func TestSendStealthTransferDeterministic_RevealedOnlyFetchesAccount(t *testing.
 		},
 	}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	result, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	result, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	if err != nil {
-		t.Fatalf("SendStealthTransferDeterministic (revealed only): %v", err)
+		t.Fatalf("SendStealthTransfer (revealed only): %v", err)
 	}
 	// The from-account component is fetched (resolution declares it + its vault as inputs).
 	foundComponent := false
@@ -495,7 +495,7 @@ func TestSendStealthTransfer_FetchErrorReturns(t *testing.T) {
 		},
 	}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	_, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want the fetch error", err)
 	}
@@ -529,7 +529,7 @@ func TestSendStealthTransfer_SubmitErrorFreesHandle(t *testing.T) {
 		},
 	}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	_, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want the submit error", err)
 	}
@@ -563,7 +563,7 @@ func TestSendStealthTransfer_MissingUtxoIDRejected(t *testing.T) {
 		return nil, nil
 	}}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendStealthTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	_, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
 	var oe *Error
 	if !errors.As(err, &oe) || oe.Code != "VALIDATION" {
 		t.Fatalf("err = %v, want a VALIDATION *Error", err)

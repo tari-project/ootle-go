@@ -12,12 +12,14 @@ import (
 )
 
 // TestSubmitSealed_DrivesSubmitWaitParse asserts SubmitSealed hex→base64-encodes the
-// envelope, submits it, and parses the finalized result the transport returns. The
-// encoded transaction and expected result come from committed vectors, so the parse runs
-// through the real core parser.
+// envelope, submits it, and parses the finalized result the transport returns. The encoded
+// transaction is a synthetic hex blob (SubmitSealed only re-encodes it — it does not decode or
+// seal), and the expected result comes from a committed parse vector, so the parse runs through
+// the real core parser. The hex→base64 byte-compare is exact here (it tests the transport
+// encoding, not the random-nonce seal).
 func TestSubmitSealed_DrivesSubmitWaitParse(t *testing.T) {
-	f := loadResolveFixture(t, "single_key_basic.json")
-	wantEnvelopeB64 := base64.StdEncoding.EncodeToString(mustHex(t, f.Expected.EncodedTransaction))
+	const encodedTxHex = "0102030405060708090a0b0c0d0e0f10"
+	wantEnvelopeB64 := base64.StdEncoding.EncodeToString(mustHex(t, encodedTxHex))
 	rawResult, wantParsed := loadParseRaw(t, "accept.json")
 
 	var gotEnvelope string
@@ -28,7 +30,7 @@ func TestSubmitSealed_DrivesSubmitWaitParse(t *testing.T) {
 		},
 		submit: func(_ context.Context, envelopeB64 string) (string, error) {
 			gotEnvelope = envelopeB64
-			return f.Expected.TransactionID, nil
+			return fakeTxID, nil
 		},
 		result: func(_ context.Context, _ string) (json.RawMessage, bool, error) {
 			return rawResult, true, nil
@@ -37,8 +39,8 @@ func TestSubmitSealed_DrivesSubmitWaitParse(t *testing.T) {
 
 	c := NewClient(mock)
 	result, err := c.SubmitSealed(context.Background(), EncodedPublicTransfer{
-		EncodedTransaction: f.Expected.EncodedTransaction,
-		TransactionID:      f.Expected.TransactionID,
+		EncodedTransaction: encodedTxHex,
+		TransactionID:      fakeTxID,
 	})
 	if err != nil {
 		t.Fatalf("SubmitSealed: %v", err)

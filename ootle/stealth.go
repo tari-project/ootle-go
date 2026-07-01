@@ -258,17 +258,17 @@ func (i StealthTransferIntent) utxoSubstateIDs() ([]string, error) {
 	return ids, nil
 }
 
-// --- Deterministic / reproducible-build API ---------------------------------------------
+// --- Seeded construction / offline-build API --------------------------------------------
 //
-// The type and functions below pin a single build seed so the SIGNATURES the core produces are
-// reproducible (the embedded bulletproof + viewable-balance proofs are not byte-stable). The core
-// expands the seed into every nonce/mask it needs. Production callers want StealthProductionKeys
-// plus the Client.SendStealthTransfer driver; reach for these only when you need signature parity
-// or an offline one-shot build+encode.
+// As of ABI ootle-sdk-ffi-c/16 every Schnorr signature is signed with a fresh random nonce (no
+// seed feeds a signing nonce), so the SEAL is never byte-reproducible. The seed below pins only the
+// non-signature reproducible randomness the core still derives from it — the per-output masks and
+// AEAD/ElGamal/ZK construction nonces — which the offline build+encode path (BuildAndEncodeStealthTransfer)
+// uses. Production callers want StealthProductionKeys plus the Client.SendStealthTransfer driver.
 
-// StealthTransferKeys is the seed-reproducible signing bundle; production callers should use
-// StealthProductionKeys. It mirrors the C ABI's keys_json ({account_secret, seed}, all lowercase
-// hex). The seed pins every derived nonce so the signatures reproduce byte-for-byte.
+// StealthTransferKeys mirrors the C ABI's keys_json ({account_secret, seed}, all lowercase hex).
+// The seed pins the per-output construction randomness (masks / ZK nonces) for the offline
+// BuildAndEncodeStealthTransfer path; it does NOT pin any signing nonce (signatures are random).
 type StealthTransferKeys struct {
 	AccountSecret string `json:"account_secret"`
 	Seed          string `json:"seed,omitempty"`
@@ -285,12 +285,6 @@ type StealthProductionKeys = StealthTransferKeys
 // stealth_abi.rs). Use either type interchangeably.
 type EncodedStealthTransfer = EncodedPublicTransfer
 
-// stealthSealFunc is the seal+encode core call for the stealth flow (random-nonce or
-// seed-reproducible). It CONSUMES the stealth handle. Unlike the public sealFunc it also takes the
-// network byte (the stealth partial does not carry it). The seed (deterministic path) travels inside
-// keysJSON. Both cffi stealth seal wrappers satisfy this shape.
-type stealthSealFunc func(h *cffi.StealthHandle, networkByte uint8, keysJSON string) (string, error)
-
 // SendStealthTransfer drives a confidential transfer end-to-end against the indexer, using
 // the production (random-entropy) seal: fetch input UTXOs → build unsigned (stealth handle)
 // → seal+encode → submit → wait → parse. This is the path production callers want; the
@@ -303,39 +297,21 @@ func (c *Client) SendStealthTransfer(ctx context.Context, intent StealthTransfer
 	if err != nil {
 		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
 	}
-	return c.sendStealthTransfer(ctx, c.network, intent, string(keysJSON), "", true, cffi.SealAndEncodeStealthTransfer)
+	return c.sendStealthTransfer(ctx, c.network, intent, string(keysJSON))
 }
 
-// SendStealthTransferDeterministic is the seed-reproducible counterpart of SendStealthTransfer;
-// production callers should use SendStealthTransfer.
-// With fixed fetched substates and a pinned build seed the SIGNATURES the core produces are
-// reproducible; the embedded proofs (bulletproof + viewable-balance) are not byte-stable
-// (stealth send vectors compare semantically). The seed travels in keys.Seed. Everything else
-// (fetch, submit, wait, parse, handle lifetime) is identical to SendStealthTransfer.
-func (c *Client) SendStealthTransferDeterministic(ctx context.Context, intent StealthTransferIntent, keys StealthTransferKeys) (FinalizedResult, error) {
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-	return c.sendStealthTransfer(ctx, c.network, intent, string(keysJSON), keys.Seed, false, cffi.SealAndEncodeStealthTransferWithSeed)
-}
-
-// sendStealthTransfer is the shared stealth driver for both key paths. It marshals the
+// sendStealthTransfer is the shared stealth driver. It marshals the
 // intent + spend secrets, seeds the stealth partial (want list, no inputs fetched), drives the
 // host-driven NeedMore fetch loop (the same convergence the public path uses) until resolved, then
-// seals + encodes, submits, waits and parses.
+// seals + encodes (random-nonce), submits, waits and parses.
 //
-// production selects the build entry point (production draws a fresh OS-RNG seed and ignores
-// seedHex; the seeded path pins every nonce from seedHex). seal is the handle-consuming
-// seal+encode call.
-//
-// Handle lifetime: BuildStealthUnsigned* returns a stealth handle the driver owns.
+// Handle lifetime: BuildStealthUnsigned returns a stealth handle the driver owns.
 // ApplyFetchedSubstatesStealth and seal CONSUME the handle (the cffi wrappers nil the *StealthHandle
 // even on error, returning the next one). The deferred guard frees whatever handle the driver
 // currently owns; after a consuming call the driver re-points `handle` (or nils it on seal), so the
 // guard never double-frees and always frees the live handle on every early return (fetch error,
 // resolution failure, transport error) and panic.
-func (c *Client) sendStealthTransfer(ctx context.Context, network Network, intent StealthTransferIntent, keysJSON, seedHex string, production bool, seal stealthSealFunc) (result FinalizedResult, err error) {
+func (c *Client) sendStealthTransfer(ctx context.Context, network Network, intent StealthTransferIntent, keysJSON string) (result FinalizedResult, err error) {
 	netByte, nErr := resolveNetworkByte(network)
 	if nErr != nil {
 		return FinalizedResult{}, nErr
@@ -359,14 +335,7 @@ func (c *Client) sendStealthTransfer(ctx context.Context, network Network, inten
 	}
 
 	// --- Phase 1: seed the stealth resolver (handle + want list, no inputs fetched) ----------
-	var handle *cffi.StealthHandle
-	var wantListJSON string
-	var bErr error
-	if production {
-		handle, wantListJSON, bErr = cffi.BuildStealthUnsigned(netByte, string(intentJSON))
-	} else {
-		handle, wantListJSON, bErr = cffi.BuildStealthUnsignedWithSeed(netByte, string(intentJSON), seedHex)
-	}
+	handle, wantListJSON, bErr := cffi.BuildStealthUnsigned(netByte, string(intentJSON))
 	if bErr != nil {
 		return FinalizedResult{}, fromCffiError(bErr)
 	}
@@ -434,7 +403,7 @@ func (c *Client) sendStealthTransfer(ctx context.Context, network Network, inten
 	}
 
 	// --- Phase 3: seal + encode (consumes the handle) ---------------------------------------
-	encodedJSON, seErr := seal(handle, netByte, keysJSON)
+	encodedJSON, seErr := cffi.SealAndEncodeStealthTransfer(handle, netByte, keysJSON)
 	handle = nil // consumed; the guard must not free it
 	if seErr != nil {
 		return FinalizedResult{}, fromCffiError(seErr)

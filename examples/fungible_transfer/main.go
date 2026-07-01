@@ -44,8 +44,10 @@ func Run(ctx context.Context) error {
 		Amount(amount).
 		Fee(fee)
 
-	// Dry-run first: estimate the fee without committing anything.
-	dr, err := client.SendPublicTransfer(ctx, transfer.DryRun().Intent(), sender.TransferKeys())
+	// Dry-run first: estimate the fee without committing anything. Use the intent's
+	// copy-on-write AsDryRun() so the shared builder is left unchanged and the real send
+	// below still commits (TransferBuilder.DryRun() would mutate the builder in place).
+	dr, err := client.SendPublicTransfer(ctx, transfer.Intent().AsDryRun(), sender.TransferKeys())
 	if err != nil {
 		return fmt.Errorf("dry-run: %w", err)
 	}

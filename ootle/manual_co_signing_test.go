@@ -18,7 +18,7 @@ type cosignFixture struct {
 	Input     struct {
 		Network            Network                     `json:"network"`
 		Intent             PublicTransferIntent        `json:"intent"`
-		Keys               DeterministicTransferKeys   `json:"keys"`
+		Keys               PublicTransferKeys          `json:"keys"`
 		Fetched            []transport.FetchedSubstate `json:"fetched"`
 		CosignSealPK       string                      `json:"cosign_seal_pk"`
 		CosignSignerSecret string                      `json:"cosign_signer_secret"`

@@ -175,61 +175,6 @@ type EncodedPublicTransfer struct {
 	TransactionID      string `json:"transaction_id"`
 }
 
-// --- Deterministic / reproducible-build API ---------------------------------------------
-//
-// The type and function below pin a single build seed so the encoded public-transfer bytes are
-// reproducible byte-for-byte. Production callers want PublicTransferKeys plus the
-// Client.SendPublicTransfer driver; reach for these only when you need byte parity or an
-// offline one-shot build+encode.
-
-// DeterministicTransferKeys is the seed-reproducible key bundle: the account secret plus a single
-// 32-byte build seed (all lowercase hex, no 0x). The core expands the seed into every nonce it
-// needs. Production callers should use PublicTransferKeys. SealSecret is optional — nil means the
-// single-key path (account key is also the seal signer).
-type DeterministicTransferKeys struct {
-	AccountSecret string  `json:"account_secret"`
-	Seed          string  `json:"seed"`
-	SealSecret    *string `json:"seal_secret,omitempty"`
-}
-
-// BuildAndEncodePublicTransfer builds, deterministically seals (from the build seed) and
-// BOR-encodes a public transfer in one call, with no transport involved — a reproducible
-// offline one-shot for callers that drive their own submission. Production callers driving a
-// transfer end-to-end want Client.SendPublicTransfer. The output is reproducible byte-for-byte
-// for identical inputs. Errors carry the stable core code via *Error.
-func BuildAndEncodePublicTransfer(network Network, intent PublicTransferIntent, keys DeterministicTransferKeys) (EncodedPublicTransfer, error) {
-	var out EncodedPublicTransfer
-
-	netByte, ok := network.ByteValue()
-	if !ok {
-		return out, &Error{Code: "VALIDATION", Message: fmt.Sprintf("unknown network %q", network)}
-	}
-	// This is the seed-reproducible one-shot: a build seed is mandatory. Reject an empty seed up front
-	// with a clear error rather than surfacing an opaque core parse failure. Drive the transfer
-	// end-to-end with Client.SendPublicTransfer for the random path.
-	if keys.Seed == "" {
-		return out, &Error{Code: "VALIDATION", Message: "BuildAndEncodePublicTransfer requires keys.Seed (the 32-byte build seed); use Client.SendPublicTransfer for the random path"}
-	}
-
-	intentJSON, err := intent.marshalJSON()
-	if err != nil {
-		return out, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal intent: %v", err)}
-	}
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return out, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-
-	dataJSON, cerr := cffi.BuildAndEncodePublicTransferWithSeed(netByte, string(intentJSON), string(keysJSON))
-	if cerr != nil {
-		return out, fromCffiError(cerr)
-	}
-	if err := json.Unmarshal([]byte(dataJSON), &out); err != nil {
-		return out, &Error{Code: "ENCODING", Message: fmt.Sprintf("unmarshal result: %v", err)}
-	}
-	return out, nil
-}
-
 // ABIVersion returns the ABI tag reported by the vendored native lib.
 func ABIVersion() string {
 	return cffi.ABIVersion()

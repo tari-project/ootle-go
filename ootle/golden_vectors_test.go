@@ -75,12 +75,6 @@ const (
 	opEncodeArg = "encode_arg"
 	// Co-signing: the authorize→attach→seal hand-off.
 	//
-	// cosign_add_signature is a seed-derived (reproducible) byte vector. The C ABI exposes only the
-	// random-nonce ootle_add_signature, so the Go host cannot reproduce the seed-derived
-	// authorization byte-for-byte; instead it drives the random authorization over the C ABI and
-	// proves it is functionally correct — a well-formed authorization that the seal-with-auth path
-	// accepts and that yields a validating sealed tx.
-	opCosignAddSignature = "cosign_add_signature"
 	// cosign_seal_with_auth is the full authorize→attach→seal, semantic compare (the sealed tx carries
 	// a Schnorr seal scalar that is byte-unstable). Go drives the whole flow over the C ABI —
 	// build+resolve a handle, extract the unsigned record, authorize (production), seal-with-auth —
@@ -98,9 +92,9 @@ type goldenFixture struct {
 	Operation string `json:"operation"`
 	Input     struct {
 		// Encode ops (build / resolve).
-		Network *Network                   `json:"network"`
-		Intent  *PublicTransferIntent      `json:"intent"`
-		Keys    *DeterministicTransferKeys `json:"keys"`
+		Network *Network              `json:"network"`
+		Intent  *PublicTransferIntent `json:"intent"`
+		Keys    *PublicTransferKeys   `json:"keys"`
 		// Resolve op only.
 		Fetched []transport.FetchedSubstate `json:"fetched"`
 		// Generic builder op only (build_and_encode_instructions) — the GenericTransactionIntent, handed
@@ -331,11 +325,6 @@ func runGoldenVector(t *testing.T, fx goldenFixture) {
 		// the vendored vector is well-formed. The bytes cross the ABI inside the generic-build vectors
 		// above (byte-compared there).
 		runEncodeArg(t, fx)
-	case opCosignAddSignature:
-		// Co-sign authorize. The seed-derived byte vector cannot be reproduced over the random-only
-		// C ABI, so the Go arm proves the random authorization is functionally correct (well-formed
-		// + accepted by a validating seal) — see runCosignAddSignature.
-		runCosignAddSignature(t, fx)
 	case opCosignSealWithAuth:
 		// Co-sign full seal, semantic compare: build+resolve → authorize → seal-with-auth → validate,
 		// comparing the deterministic decoded fields (see runCosignSealWithAuth).
@@ -599,23 +588,43 @@ func runAccountBalances(t *testing.T, fx goldenFixture) {
 	}
 }
 
-// runEncodeBuild exercises the one-call build+seal+encode path and asserts the encoded
-// transaction + id hex match the vector byte-for-byte.
+// runEncodeBuild exercises the one-call build+seal+encode path over the C ABI. The seal signs with a
+// fresh random nonce (ABI ootle-sdk-ffi-c/16), so the encoded bytes/id are NOT reproducible and there
+// is no public-transaction decode/verify FFI to canonicalize them. So — mirroring the monorepo's own
+// FFI test — the arm asserts the encoded envelope is well-formed (see assertWellFormedEncoded). The
+// deterministic sealed_transaction_semantic block is re-verified only by the Rust core tests.
 func runEncodeBuild(t *testing.T, fx goldenFixture) {
 	t.Helper()
 	net, intent, keys := requireEncodeInput(t, fx)
-	got, err := BuildAndEncodePublicTransfer(net, intent, keys)
-	if err != nil {
-		t.Fatalf("BuildAndEncodePublicTransfer: %v", err)
+	netByte, ok := net.ByteValue()
+	if !ok {
+		t.Fatalf("fixture %q: unknown network %q", fx.Name, net)
 	}
-	assertEncodeHex(t, fx, got.EncodedTransaction, got.TransactionID)
+	intentJSON, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatalf("marshal intent: %v", err)
+	}
+	keysJSON, err := json.Marshal(keys)
+	if err != nil {
+		t.Fatalf("marshal keys: %v", err)
+	}
+	dataJSON, cerr := cffi.BuildAndEncodePublicTransfer(netByte, string(intentJSON), string(keysJSON))
+	if cerr != nil {
+		t.Fatalf("BuildAndEncodePublicTransfer over C ABI: %v", cerr)
+	}
+	var encoded EncodedPublicTransfer
+	if uerr := json.Unmarshal([]byte(dataJSON), &encoded); uerr != nil {
+		t.Fatalf("unmarshal encoded transfer: %v", uerr)
+	}
+	assertSemanticSealed(t, fx, netByte, encoded.EncodedTransaction)
 }
 
 // runEncodeResolve drives the two-phase resolved path directly through the cgo seams:
-// BuildUnsigned → ApplyFetchedSubstates(the vector's full fetched batch) → SealAndEncodeWithSeed.
-// The committed vector carries the complete fetched batch (component + vault together),
-// so a single apply pass resolves and the seal reproduces the expected hex byte-for-byte.
-// (The Client driver loop is exercised separately in driver_test.go.)
+// BuildUnsigned → ApplyFetchedSubstates(the vector's full fetched batch) → SealAndEncode. The
+// committed vector carries the complete fetched batch (component + vault together), so a single apply
+// pass resolves. The random-nonce seal is not byte-reproducible, so the arm asserts a well-formed
+// encoded envelope (see runEncodeBuild). (The Client driver loop is exercised separately in
+// driver_test.go.)
 func runEncodeResolve(t *testing.T, fx goldenFixture) {
 	t.Helper()
 	net, intent, keys := requireEncodeInput(t, fx)
@@ -665,8 +674,8 @@ func runEncodeResolve(t *testing.T, fx goldenFixture) {
 		t.Fatalf("fixture %q: single-batch resolve did not converge (status=%q); the vector's fetched batch should fully resolve", fx.Name, res.Status)
 	}
 
-	encodedJSON, err := cffi.SealAndEncodeWithSeed(handle, string(keysJSON))
-	handle = nil // consumed by SealAndEncodeWithSeed.
+	encodedJSON, err := cffi.SealAndEncode(handle, string(keysJSON))
+	handle = nil // consumed by SealAndEncode.
 	if err != nil {
 		t.Fatalf("SealAndEncode: %v", err)
 	}
@@ -674,15 +683,15 @@ func runEncodeResolve(t *testing.T, fx goldenFixture) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("unmarshal encoded transfer: %v", uerr)
 	}
-	assertEncodeHex(t, fx, encoded.EncodedTransaction, encoded.TransactionID)
+	assertSemanticSealed(t, fx, netByte, encoded.EncodedTransaction)
 }
 
 // runEncodeInstructions drives the generic builder's two-phase path directly through the cgo seams:
 // BuildUnsignedInstructions(the fixture's generic_intent) → ApplyFetchedSubstates(the vector's fetched
-// batch) → SealAndEncodeWithSeed. The generic-build vectors carry explicit inputs (so an empty fetched
-// batch resolves in one pass) and a seed-reproducible seal, so the encoded transaction + id
-// reproduce byte-for-byte. The generic entry point reuses the same apply/seal surface as the public
-// path.
+// batch) → SealAndEncode. The generic-build vectors carry explicit inputs (so an empty fetched batch
+// resolves in one pass). The random-nonce seal is not byte-reproducible, so the arm asserts a
+// well-formed encoded envelope (see runEncodeBuild). The generic entry point reuses the same apply/seal
+// surface as the public path.
 func runEncodeInstructions(t *testing.T, fx goldenFixture) {
 	t.Helper()
 	if fx.Input.Network == nil {
@@ -733,8 +742,8 @@ func runEncodeInstructions(t *testing.T, fx goldenFixture) {
 		t.Fatalf("fixture %q: single-batch resolve did not converge (status=%q)", fx.Name, res.Status)
 	}
 
-	encodedJSON, err := cffi.SealAndEncodeWithSeed(handle, string(keysJSON))
-	handle = nil // consumed by SealAndEncodeWithSeed.
+	encodedJSON, err := cffi.SealAndEncode(handle, string(keysJSON))
+	handle = nil // consumed by SealAndEncode.
 	if err != nil {
 		t.Fatalf("SealAndEncode: %v", err)
 	}
@@ -742,14 +751,15 @@ func runEncodeInstructions(t *testing.T, fx goldenFixture) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("unmarshal encoded transfer: %v", uerr)
 	}
-	assertEncodeHex(t, fx, encoded.EncodedTransaction, encoded.TransactionID)
+	assertSemanticSealed(t, fx, netByte, encoded.EncodedTransaction)
 }
 
 // runEncodeFaucetClaim drives the builtin faucet builder's two-phase path through the cgo seams:
 // BuildFaucetClaim(the fixture's faucet_intent) → ApplyFetchedSubstates(the vector's fetched batch) →
-// SealAndEncodeWithSeed. The vector carries the faucet's fetched component + vault, so it resolves in
-// one pass and the seed-reproducible seal reproduces the encoded transaction + id byte-for-byte. The
-// faucet entry point reuses the same apply/seal surface as the generic and public paths.
+// SealAndEncode. The vector carries the faucet's fetched component + vault, so it resolves in one pass.
+// The random-nonce seal is not byte-reproducible, so the arm asserts a well-formed encoded envelope
+// (see runEncodeBuild). The faucet entry point reuses the same apply/seal surface as the generic and
+// public paths.
 func runEncodeFaucetClaim(t *testing.T, fx goldenFixture) {
 	t.Helper()
 	if fx.Input.Network == nil {
@@ -800,8 +810,8 @@ func runEncodeFaucetClaim(t *testing.T, fx goldenFixture) {
 		t.Fatalf("fixture %q: single-batch resolve did not converge (status=%q)", fx.Name, res.Status)
 	}
 
-	encodedJSON, err := cffi.SealAndEncodeWithSeed(handle, string(keysJSON))
-	handle = nil // consumed by SealAndEncodeWithSeed.
+	encodedJSON, err := cffi.SealAndEncode(handle, string(keysJSON))
+	handle = nil // consumed by SealAndEncode.
 	if err != nil {
 		t.Fatalf("SealAndEncode: %v", err)
 	}
@@ -809,7 +819,7 @@ func runEncodeFaucetClaim(t *testing.T, fx goldenFixture) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("unmarshal encoded transfer: %v", uerr)
 	}
-	assertEncodeHex(t, fx, encoded.EncodedTransaction, encoded.TransactionID)
+	assertSemanticSealed(t, fx, netByte, encoded.EncodedTransaction)
 }
 
 // runEncodeArg validates a typed-arg DSL vector. There is no standalone arg-encode C ABI entry point —
@@ -1092,7 +1102,7 @@ func isLowerHex(s string) bool {
 
 // requireEncodeInput extracts the (network, intent, keys) an encode op needs, failing
 // the test if any is absent.
-func requireEncodeInput(t *testing.T, fx goldenFixture) (Network, PublicTransferIntent, DeterministicTransferKeys) {
+func requireEncodeInput(t *testing.T, fx goldenFixture) (Network, PublicTransferIntent, PublicTransferKeys) {
 	t.Helper()
 	if fx.Input.Network == nil {
 		t.Fatalf("fixture %q: encode op requires input.network", fx.Name)
@@ -1174,67 +1184,6 @@ func cosignAuthorize(t *testing.T, fx goldenFixture, handle *cffi.Handle, netByt
 	return wrap.Authorization
 }
 
-// runCosignAddSignature exercises the authorize step over the C ABI. The seed-derived byte vector
-// (expected.cosign_authorization) cannot be reproduced via the random-only FFI, so this proves
-// the random authorization is functionally correct: well-formed (public_key + signature hex) and
-// accepted by a seal-with-auth that yields a validating sealed tx. The byte-lock of the seed-derived
-// authorization stays a core concern.
-func runCosignAddSignature(t *testing.T, fx goldenFixture) {
-	t.Helper()
-	if fx.compareMode() != "bytes" {
-		t.Fatalf("fixture %q: cosign_add_signature must use the default \"bytes\" compare (got %q)", fx.Name, fx.compareMode())
-	}
-	if len(fx.Expected.CosignAuthorization) == 0 {
-		t.Fatalf("fixture %q: cosign_add_signature requires expected.cosign_authorization", fx.Name)
-	}
-	if fx.Input.Keys == nil {
-		t.Fatalf("fixture %q: cosign_add_signature requires input.keys (to seal with the authorization)", fx.Name)
-	}
-
-	handle, netByte := cosignResolveHandle(t, fx)
-	defer func() { cffi.FreeHandle(handle) }()
-
-	auth := cosignAuthorize(t, fx, handle, netByte)
-
-	// Well-formedness: the authorization carries a public_key + signature, both lowercase hex.
-	var authObj struct {
-		PublicKey string `json:"public_key"`
-		Signature string `json:"signature"`
-	}
-	if uerr := json.Unmarshal(auth, &authObj); uerr != nil {
-		t.Fatalf("fixture %q: unmarshal authorization fields: %v", fx.Name, uerr)
-	}
-	if _, err := hex.DecodeString(authObj.PublicKey); err != nil || len(authObj.PublicKey) != 64 {
-		t.Errorf("fixture %q: authorization public_key is not 32-byte hex: %q", fx.Name, authObj.PublicKey)
-	}
-	if _, err := hex.DecodeString(authObj.Signature); err != nil || len(authObj.Signature) != 128 {
-		t.Errorf("fixture %q: authorization signature is not 64-byte hex: %q", fx.Name, authObj.Signature)
-	}
-
-	// Functional check: attach + seal, then validate the sealed tx (decode + verify-all-sigs in the
-	// core). A bad authorization would fail verification here.
-	keysJSON, err := json.Marshal(fx.Input.Keys)
-	if err != nil {
-		t.Fatalf("marshal keys: %v", err)
-	}
-	authsJSON, err := json.Marshal([]json.RawMessage{auth})
-	if err != nil {
-		t.Fatalf("marshal authorizations: %v", err)
-	}
-	encodedJSON, err := cffi.SealAndEncodeWithAuthWithSeed(handle, string(keysJSON), string(authsJSON))
-	handle = nil // consumed by SealAndEncodeWithAuthWithSeed.
-	if err != nil {
-		t.Fatalf("fixture %q: SealAndEncodeWithAuth: %v", fx.Name, err)
-	}
-	var encoded EncodedPublicTransfer
-	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
-		t.Fatalf("fixture %q: unmarshal encoded transfer: %v", fx.Name, uerr)
-	}
-	if _, verr := cffi.ValidateStealthTransfer(netByte, encoded.EncodedTransaction); verr != nil {
-		t.Errorf("fixture %q: cosigned seal failed validation (the production authorization was not accepted): %v", fx.Name, verr)
-	}
-}
-
 // runCosignSealWithAuth drives the full authorize→attach→seal flow over the C ABI (semantic compare):
 // build+resolve A's handle → extract the unsigned record → B authorizes (production) → A seals with
 // the authorization attached → hand the seal back to ootle_validate_stealth_transfer (the shared
@@ -1266,7 +1215,7 @@ func runCosignSealWithAuth(t *testing.T, fx goldenFixture) {
 	if err != nil {
 		t.Fatalf("marshal authorizations: %v", err)
 	}
-	encodedJSON, err := cffi.SealAndEncodeWithAuthWithSeed(handle, string(keysJSON), string(authsJSON))
+	encodedJSON, err := cffi.SealAndEncodeWithAuth(handle, string(keysJSON), string(authsJSON))
 	handle = nil // consumed.
 	if err != nil {
 		t.Fatalf("fixture %q: SealAndEncodeWithAuth: %v", fx.Name, err)
@@ -1275,29 +1224,37 @@ func runCosignSealWithAuth(t *testing.T, fx goldenFixture) {
 	if uerr := json.Unmarshal([]byte(encodedJSON), &encoded); uerr != nil {
 		t.Fatalf("fixture %q: unmarshal encoded transfer: %v", fx.Name, uerr)
 	}
+	assertSemanticSealed(t, fx, netByte, encoded.EncodedTransaction)
+}
 
-	// Decode + verify-all-sigs in the core; compare the deterministic decoded fields.
-	canonicalJSON, verr := cffi.ValidateStealthTransfer(netByte, encoded.EncodedTransaction)
+// assertSemanticSealed is the ABI-16 semantic counterpart of the old byte-for-byte sealed-transaction
+// compare. A random-nonce seal (ootle-sdk-ffi-c/16) is no longer byte-reproducible, so instead of
+// comparing the encoded bytes the runner hands them back to the core over the C ABI, which BOR-decodes
+// the sealed transaction, verifies EVERY signature, and returns canonical JSON with the byte-unstable
+// Schnorr scalars nulled; the runner then byte-compares the deterministic fields (instructions, inputs,
+// fee, signer public keys) against the fixture's expected.sealed_transaction_semantic. This preserves
+// the cross-language ENCODING conformance guarantee while tolerating the random signature bytes, and
+// mirrors the Rust golden-vector compare. The decode+verify is transaction-agnostic (it works for the
+// public sealed ops as well as stealth — see decode_and_canonicalize_sealed_transfer in the core);
+// ootle_validate_stealth_transfer is simply the entry point that exposes it.
+func assertSemanticSealed(t *testing.T, fx goldenFixture, netByte uint8, encodedHex string) {
+	t.Helper()
+	if fx.compareMode() != "semantic" {
+		t.Fatalf("fixture %q: sealed op must declare \"compare\":\"semantic\" (got %q)", fx.Name, fx.compareMode())
+	}
+	if len(fx.Expected.SealedTransactionSemantic) == 0 {
+		t.Fatalf("fixture %q: semantic sealed op requires expected.sealed_transaction_semantic", fx.Name)
+	}
+	canonicalJSON, verr := cffi.ValidateStealthTransfer(netByte, encodedHex)
 	if verr != nil {
-		t.Fatalf("fixture %q: ValidateStealthTransfer (decode+verify) over C ABI failed: %v", fx.Name, verr)
+		t.Fatalf("fixture %q: decode+verify (ootle_validate_stealth_transfer) over C ABI failed: %v", fx.Name, verr)
 	}
 	got := canonicalizeJSON(t, []byte(canonicalJSON))
 	want := canonicalizeJSON(t, fx.Expected.SealedTransactionSemantic)
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("fixture %q: cosign sealed_transaction (deterministic fields) mismatch:\n got:  %v\n want: %v", fx.Name, got, want)
-	}
-}
-
-// assertEncodeHex compares the produced encoded_transaction + transaction_id hex against
-// the vector's expected values byte-for-byte (string compare; decoding to structs and
-// re-comparing would hide encoder drift).
-func assertEncodeHex(t *testing.T, fx goldenFixture, gotEncoded, gotTxID string) {
-	t.Helper()
-	if gotEncoded != fx.Expected.EncodedTransaction {
-		t.Errorf("fixture %q: encoded_transaction mismatch:\n got:  %s\n want: %s", fx.Name, gotEncoded, fx.Expected.EncodedTransaction)
-	}
-	if gotTxID != fx.Expected.TransactionID {
-		t.Errorf("fixture %q: transaction_id mismatch:\n got:  %s\n want: %s", fx.Name, gotTxID, fx.Expected.TransactionID)
+		gj, _ := json.MarshalIndent(got, "", "  ")
+		wj, _ := json.MarshalIndent(want, "", "  ")
+		t.Errorf("fixture %q: sealed_transaction (deterministic fields) mismatch:\n got:  %s\n want: %s", fx.Name, gj, wj)
 	}
 }
 
@@ -1334,7 +1291,6 @@ var knownOperations = map[string]bool{
 	opBuildAndEncodeInstructions:     true,
 	opBuildAndEncodeFaucetClaim:      true,
 	opEncodeArg:                      true,
-	opCosignAddSignature:             true,
 	opCosignSealWithAuth:             true,
 }
 
@@ -1382,7 +1338,7 @@ func dispatchUnknown(tb testing.TB, fx goldenFixture) {
 		opDeriveAccountKeyFromSeed, opDeriveViewKeyFromSeed, opDeriveAccountAddress,
 		opFormatIdentityAddress, opParseAddress,
 		opDecodeSubstate, opAccountBalances, opBuildAndEncodeInstructions, opBuildAndEncodeFaucetClaim,
-		opEncodeArg, opCosignAddSignature, opCosignSealWithAuth:
+		opEncodeArg, opCosignSealWithAuth:
 		// covered elsewhere
 	default:
 		tb.Fatalf("fixture %q: unknown operation %q", fx.Name, fx.Operation)
