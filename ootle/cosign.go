@@ -48,8 +48,8 @@ func AddSignature(network Network, unsignedRecordJSON, sealPublicKeyHex, signerS
 
 // CosignSealer is PARTY A's in-progress co-sign transaction: a fully-resolved partial held open between
 // shipping the unsigned record (UnsignedRecord) and attaching the collected authorizations + sealing
-// (SealWithAuth / SealWithAuthProduction). It owns the opaque core handle; the caller MUST call exactly
-// one of SealWithAuth[Production] or Close to release it (the seal calls consume it).
+// (SealWithAuth). It owns the opaque core handle; the caller MUST call exactly one of SealWithAuth or
+// Close to release it (the seal call consumes it).
 //
 // CosignSealer is NOT safe for concurrent use.
 type CosignSealer struct {
@@ -118,36 +118,17 @@ func (s *CosignSealer) UnsignedRecord() (string, error) {
 }
 
 // SealWithAuth is PARTY A's final step and the supported offline/HSM co-sign seal: attach the collected
-// authorizations and seal from a single build seed, producing the submit-ready encoded transaction
-// byte-for-byte reproducibly. It CONSUMES the sealer (the handle is released); do not reuse it. An empty
+// authorizations and seal (random-nonce) into the submit-ready encoded transaction. keys is just the
+// account secret. It CONSUMES the sealer (the handle is released); do not reuse it. An empty
 // authorizations slice seals as a plain single-key transfer.
-func (s *CosignSealer) SealWithAuth(keys DeterministicTransferKeys, authorizations []Authorization) (EncodedPublicTransfer, error) {
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return EncodedPublicTransfer{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-	return s.sealWithAuth(string(keysJSON), authorizations, cffi.SealAndEncodeWithAuthWithSeed)
-}
-
-// SealWithAuthProduction is the production (random-nonce) counterpart of SealWithAuth. keys is just the
-// account secret. The bytes/id are not reproducible. CONSUMES the sealer.
-func (s *CosignSealer) SealWithAuthProduction(keys PublicTransferKeys, authorizations []Authorization) (EncodedPublicTransfer, error) {
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return EncodedPublicTransfer{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-	return s.sealWithAuth(string(keysJSON), authorizations, cffi.SealAndEncodeWithAuth)
-}
-
-// cosignSealFunc is the seal-with-auth core call (deterministic or production). It CONSUMES the handle.
-type cosignSealFunc func(h *cffi.Handle, keysJSON, authorizationsJSON string) (string, error)
-
-// sealWithAuth is the shared body for both key paths: marshal the authorizations, call the consuming
-// seal, and decode the encoded transfer.
-func (s *CosignSealer) sealWithAuth(keysJSON string, authorizations []Authorization, seal cosignSealFunc) (EncodedPublicTransfer, error) {
+func (s *CosignSealer) SealWithAuth(keys PublicTransferKeys, authorizations []Authorization) (EncodedPublicTransfer, error) {
 	var out EncodedPublicTransfer
 	if s == nil || s.handle == nil {
 		return out, &Error{Code: "INTERNAL", Message: "SealWithAuth called on a closed/consumed CosignSealer"}
+	}
+	keysJSON, err := json.Marshal(keys)
+	if err != nil {
+		return out, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
 	}
 	if authorizations == nil {
 		authorizations = []Authorization{}
@@ -158,7 +139,7 @@ func (s *CosignSealer) sealWithAuth(keysJSON string, authorizations []Authorizat
 	}
 	h := s.handle
 	s.handle = nil // the seal consumes it.
-	encodedJSON, cerr := seal(h, keysJSON, string(authsJSON))
+	encodedJSON, cerr := cffi.SealAndEncodeWithAuth(h, string(keysJSON), string(authsJSON))
 	if cerr != nil {
 		return out, fromCffiError(cerr)
 	}

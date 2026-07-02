@@ -6,4 +6,4 @@ from. See `docs/native-lib.md`.
 
 | Platform | Crate | ABI | Commit | Profile | Size | sha256 |
 |---|---|---|---|---|---|---|
-| darwin_arm64 | 0.35.0 | ootle-sdk-ffi-c/15 | ec590880e0ea | release | 32.5MB | 14079cc8a9e2d036… |
+| darwin_arm64 | 0.35.0 | ootle-sdk-ffi-c/16 | 67baedd6324b | release | 32.6MB | dade5ae10cca6600… |

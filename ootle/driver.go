@@ -138,26 +138,9 @@ func (c *Client) SendPublicTransfer(ctx context.Context, intent PublicTransferIn
 	return c.sendPublicTransfer(ctx, c.network, intent, string(keysJSON), cffi.SealAndEncode)
 }
 
-// --- Deterministic / reproducible-build API ---------------------------------------------
-//
-// The methods below pin a single build seed so the encoded bytes are reproducible byte-for-byte.
-// Production callers want SendPublicTransfer and PublicTransferKeys; reach for these only
-// when you need byte parity for an identical build.
-
-// SendPublicTransferDeterministic is the seed-reproducible counterpart of SendPublicTransfer;
-// production callers should use SendPublicTransfer. With fixed fetched substates and a pinned
-// seed the sealed bytes/id are reproducible byte-for-byte. Everything else (the resolution
-// loop, submit, wait, parse, handle lifetime) is identical.
-func (c *Client) SendPublicTransferDeterministic(ctx context.Context, intent PublicTransferIntent, keys DeterministicTransferKeys) (FinalizedResult, error) {
-	keysJSON, err := json.Marshal(keys)
-	if err != nil {
-		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal keys: %v", err)}
-	}
-	return c.sendPublicTransfer(ctx, c.network, intent, string(keysJSON), cffi.SealAndEncodeWithSeed)
-}
-
-// sealFunc is the seal+encode core call (random-nonce or seed-reproducible). It CONSUMES the
-// handle. Both cffi.SealAndEncode and cffi.SealAndEncodeWithSeed satisfy it.
+// sealFunc is the seal+encode core call. It CONSUMES the handle; cffi.SealAndEncode satisfies it.
+// The indirection is retained so the shared driver body (sendPublicTransfer / sendInstructions)
+// stays agnostic to the phase-1 entry point.
 type sealFunc func(h *cffi.Handle, keysJSON string) (string, error)
 
 // sendPublicTransfer is the shared two-phase driver for both key paths. seal is the

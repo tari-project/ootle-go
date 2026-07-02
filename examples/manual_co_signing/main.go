@@ -77,7 +77,7 @@ func Run(ctx context.Context) error {
 	}
 
 	// Party A attaches both authorizations, seals, and submits.
-	encoded, err := sealer.SealWithAuthProduction(a.TransferKeys(), []ootle.Authorization{authA, authB})
+	encoded, err := sealer.SealWithAuth(a.TransferKeys(), []ootle.Authorization{authA, authB})
 	if err != nil {
 		return err
 	}

@@ -72,19 +72,42 @@ var (
 	_ finalizationStreamer = (*mockTransport)(nil)
 )
 
-// resolveFixture mirrors a committed resolve_public_transfer/* vector.
+// resolveFixture mirrors a committed resolve_public_transfer/* vector. Since ABI
+// ootle-sdk-ffi-c/16 the seal signs with a random nonce, so the vector no longer pins
+// expected.encoded_transaction / transaction_id — the driver tests assert the submitted
+// envelope is well-formed rather than byte-for-byte, and use fakeTxID for the mock's returned id.
 type resolveFixture struct {
 	Operation string `json:"operation"`
 	Input     struct {
 		Network Network                     `json:"network"`
 		Intent  PublicTransferIntent        `json:"intent"`
-		Keys    DeterministicTransferKeys   `json:"keys"`
+		Keys    PublicTransferKeys          `json:"keys"`
 		Fetched []transport.FetchedSubstate `json:"fetched"`
 	} `json:"input"`
-	Expected struct {
-		EncodedTransaction string `json:"encoded_transaction"`
-		TransactionID      string `json:"transaction_id"`
-	} `json:"expected"`
+}
+
+// fakeTxID is a synthetic 32-byte (64 hex char) transaction id the mock transports return in
+// place of the vector's (now-absent) expected.transaction_id.
+const fakeTxID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+// fakeEncodedTx is a synthetic hex-encoded transaction the submit-side tests feed to SubmitSealed
+// (which only hex→base64 re-encodes it — it never decodes or seals it), standing in for the
+// vector's (now-absent) expected.encoded_transaction.
+const fakeEncodedTx = "0102030405060708090a0b0c0d0e0f10"
+
+// assertWellFormedEnvelope asserts the submitted base64 envelope decodes to a non-empty byte
+// slice — the strongest still-true check now that the random-nonce seal makes the encoded bytes
+// non-reproducible (so a byte-for-byte compare against the vector is no longer possible).
+func assertWellFormedEnvelope(t *testing.T, b64 string) {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Errorf("submitted envelope is not valid base64: %v", err)
+		return
+	}
+	if len(raw) == 0 {
+		t.Errorf("submitted envelope decoded to an empty byte slice")
+	}
 }
 
 func loadResolveFixture(t *testing.T, rel string) resolveFixture {
@@ -159,18 +182,16 @@ func loadParseRaw(t *testing.T, rel string) (json.RawMessage, FinalizedResult) {
 	return fx.Input.RawResult, fx.Expected.Parsed
 }
 
-// TestSendPublicTransferDeterministic_MockTransport drives the full two-phase flow
+// TestSendPublicTransfer_MockTransport drives the full two-phase flow
 // against a mock transport seeded from a committed resolve_public_transfer vector and
 // asserts the driver's submitted envelope is the vector's expected encoded_transaction
 // (base64 of the hex), and the parsed FinalizedResult matches the canned committed
 // outcome.
-func TestSendPublicTransferDeterministic_MockTransport(t *testing.T) {
+func TestSendPublicTransfer_MockTransport(t *testing.T) {
 	f := loadResolveFixture(t, "single_key_basic.json")
 	if f.Operation != "resolve_and_encode_public_transfer" {
 		t.Fatalf("unexpected fixture operation %q", f.Operation)
 	}
-
-	wantEnvelopeB64 := base64.StdEncoding.EncodeToString(mustHex(t, f.Expected.EncodedTransaction))
 
 	// Canned finalized result + its expected parse, both from a committed parse vector.
 	rawResult, wantParsed := loadParseRaw(t, "accept.json")
@@ -181,7 +202,7 @@ func TestSendPublicTransferDeterministic_MockTransport(t *testing.T) {
 		fetch: fetchFromVector(f, &rounds),
 		submit: func(_ context.Context, envelopeB64 string) (string, error) {
 			gotEnvelope = envelopeB64
-			return f.Expected.TransactionID, nil
+			return fakeTxID, nil
 		},
 		result: func(_ context.Context, _ string) (json.RawMessage, bool, error) {
 			return rawResult, true, nil
@@ -189,17 +210,16 @@ func TestSendPublicTransferDeterministic_MockTransport(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	result, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	result, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	if err != nil {
-		t.Fatalf("SendPublicTransferDeterministic: %v", err)
+		t.Fatalf("SendPublicTransfer: %v", err)
 	}
 
-	// Byte-for-byte: the envelope the driver submitted is the resolve vector's expected
-	// encoded transaction, hex→base64. This proves the core produced the committed bytes
-	// through the full Go two-phase driver (build → resolve → seal → encode).
-	if gotEnvelope != wantEnvelopeB64 {
-		t.Errorf("submitted envelope mismatch:\n got:  %s\n want: %s", gotEnvelope, wantEnvelopeB64)
-	}
+	// The random-nonce seal is not byte-reproducible, so assert the driver submitted a
+	// well-formed envelope (valid base64 of a non-empty encoded transaction) rather than the
+	// exact committed bytes. This still proves the full Go two-phase driver ran build → resolve
+	// → seal → encode → submit.
+	assertWellFormedEnvelope(t, gotEnvelope)
 	// The parsed FinalizedResult equals the committed parse vector's expected.parsed —
 	// proving the driver routes the raw result through the core's parser and types it.
 	if !reflect.DeepEqual(result, wantParsed) {
@@ -212,15 +232,15 @@ func TestSendPublicTransferDeterministic_MockTransport(t *testing.T) {
 	}
 }
 
-// TestSendPublicTransferDeterministic_MultiRound proves the two-phase loop converges across
+// TestSendPublicTransfer_MultiRound proves the two-phase loop converges across
 // MULTIPLE fetch rounds when the host fetches strictly by the ids the core hands back — the
 // real end-to-end exercise of the C-ABI fetch_ids fix. The mock (fetchByID) serves the
 // from-component in round 0 (a want-list seed) and the from-vault only in round 1, once the
 // core's NeedMore exposes the discovered vault id in fetch_ids. The host never derives the
-// vault id itself. The submitted envelope still matches the committed vector byte-for-byte.
-func TestSendPublicTransferDeterministic_MultiRound(t *testing.T) {
+// vault id itself. The submitted envelope is asserted well-formed (the random-nonce seal is not
+// byte-reproducible); the point of this test is the multi-round convergence.
+func TestSendPublicTransfer_MultiRound(t *testing.T) {
 	f := loadResolveFixture(t, "single_key_basic.json")
-	wantEnvelopeB64 := base64.StdEncoding.EncodeToString(mustHex(t, f.Expected.EncodedTransaction))
 
 	var rounds int
 	var gotEnvelope string
@@ -228,18 +248,16 @@ func TestSendPublicTransferDeterministic_MultiRound(t *testing.T) {
 		fetch: fetchByID(f, &rounds),
 		submit: func(_ context.Context, envelopeB64 string) (string, error) {
 			gotEnvelope = envelopeB64
-			return f.Expected.TransactionID, nil
+			return fakeTxID, nil
 		},
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	if err != nil {
-		t.Fatalf("SendPublicTransferDeterministic: %v", err)
+		t.Fatalf("SendPublicTransfer: %v", err)
 	}
-	if gotEnvelope != wantEnvelopeB64 {
-		t.Errorf("submitted envelope mismatch:\n got:  %s\n want: %s", gotEnvelope, wantEnvelopeB64)
-	}
+	assertWellFormedEnvelope(t, gotEnvelope)
 	// The vault is discovered only after the component is fetched, so convergence MUST take
 	// at least two fetch rounds — this is what the fetch_ids fix makes reachable.
 	if rounds < 2 {
@@ -276,7 +294,7 @@ func TestSendPublicTransfer_WithheldRequiredSubstateErrors(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	if err == nil {
 		t.Fatal("expected a non-convergence error, got nil")
 	}
@@ -324,7 +342,7 @@ func TestSendPublicTransfer_RejectsExplicitInputs(t *testing.T) {
 		return nil, nil
 	}}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendPublicTransferDeterministic(context.Background(), intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), intent, f.Input.Keys)
 	var oe *Error
 	if !errors.As(err, &oe) {
 		t.Fatalf("expected *ootle.Error, got %T: %v", err, err)
@@ -352,7 +370,7 @@ func TestSendPublicTransfer_SubmitErrorFreesHandle(t *testing.T) {
 	}
 
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want the submit error", err)
 	}
@@ -371,7 +389,7 @@ func TestSendPublicTransfer_FetchErrorFreesHandle(t *testing.T) {
 		},
 	}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	_, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want the fetch error", err)
 	}
@@ -392,7 +410,7 @@ func TestSendPublicTransfer_ContextCancelDuringWait(t *testing.T) {
 	c := NewClient(mock, WithNetwork(f.Input.Network), WithPollInterval(time.Millisecond))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	_, err := c.SendPublicTransferDeterministic(ctx, f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(ctx, f.Input.Intent, f.Input.Keys)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}
@@ -416,7 +434,7 @@ func TestSendPublicTransfer_NoNetworkConfigured(t *testing.T) {
 		return nil, nil
 	}}
 	c := NewClient(mock) // no WithNetwork
-	_, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	var oe *Error
 	if !errors.As(err, &oe) {
 		t.Fatalf("expected *ootle.Error, got %T: %v", err, err)
@@ -427,11 +445,10 @@ func TestSendPublicTransfer_NoNetworkConfigured(t *testing.T) {
 }
 
 // TestWithNetwork_DrivesTransfer proves a client built WITH WithNetwork drives the
-// two-phase transfer through to the committed envelope — the network is read from the
+// two-phase transfer through to a well-formed submitted envelope — the network is read from the
 // client, not a per-call argument.
 func TestWithNetwork_DrivesTransfer(t *testing.T) {
 	f := loadResolveFixture(t, "single_key_basic.json")
-	wantEnvelopeB64 := base64.StdEncoding.EncodeToString(mustHex(t, f.Expected.EncodedTransaction))
 
 	var rounds int
 	var gotEnvelope string
@@ -439,16 +456,14 @@ func TestWithNetwork_DrivesTransfer(t *testing.T) {
 		fetch: fetchFromVector(f, &rounds),
 		submit: func(_ context.Context, envelopeB64 string) (string, error) {
 			gotEnvelope = envelopeB64
-			return f.Expected.TransactionID, nil
+			return fakeTxID, nil
 		},
 	}
 	c := NewClient(mock, WithNetwork(f.Input.Network))
-	if _, err := c.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys); err != nil {
-		t.Fatalf("SendPublicTransferDeterministic: %v", err)
+	if _, err := c.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys); err != nil {
+		t.Fatalf("SendPublicTransfer: %v", err)
 	}
-	if gotEnvelope != wantEnvelopeB64 {
-		t.Errorf("submitted envelope mismatch:\n got:  %s\n want: %s", gotEnvelope, wantEnvelopeB64)
-	}
+	assertWellFormedEnvelope(t, gotEnvelope)
 }
 
 // TestConnect_BuildsClient proves Connect returns a usable client over a fresh transport
@@ -470,7 +485,7 @@ func TestConnect_BuildsClient(t *testing.T) {
 		case strings.Contains(r.URL.Path, "substates"):
 			w.Write(fetchedJSON)
 		case strings.Contains(r.URL.Path, "transactions"):
-			w.Write([]byte(`{"transaction_id":"` + f.Expected.TransactionID + `"}`))
+			w.Write([]byte(`{"transaction_id":"` + fakeTxID + `"}`))
 		default:
 			w.Write([]byte(`{"Finalized":{"final_decision":"Commit"}}`))
 		}
@@ -479,7 +494,7 @@ func TestConnect_BuildsClient(t *testing.T) {
 
 	// Without a network: a VALIDATION error before any HTTP call.
 	cNoNet := Connect(srv.URL)
-	if _, err := cNoNet.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys); err == nil {
+	if _, err := cNoNet.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys); err == nil {
 		t.Fatal("Connect without WithNetwork must reject Send*")
 	} else {
 		var oe *Error
@@ -498,7 +513,7 @@ func TestConnect_BuildsClient(t *testing.T) {
 	if cNet == nil {
 		t.Fatal("Connect returned nil")
 	}
-	_, err = cNet.SendPublicTransferDeterministic(context.Background(), f.Input.Intent, f.Input.Keys)
+	_, err = cNet.SendPublicTransfer(context.Background(), f.Input.Intent, f.Input.Keys)
 	var oe *Error
 	if errors.As(err, &oe) && oe.Code == "VALIDATION" && strings.Contains(oe.Message, "no network") {
 		t.Fatalf("network was not read from the client: %v", err)
