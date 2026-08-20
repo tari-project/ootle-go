@@ -6,10 +6,10 @@ name: CI
 # cgo links statically against the prebuilt lib committed under
 # internal/cffi/lib/<goos>_<goarch>/. A platform can only be in this matrix once its `.a`
 # is committed — otherwise the cgo LDFLAGS in internal/cffi/cffi.go point at a missing file
-# and the link fails. Today only darwin/arm64 is vendored, so CI runs on Apple Silicon only.
+# and the link fails. Every platform ootle-go vendors is now covered below.
 #
-# As `native-libs.yml` vendors the other platforms (from tari-ootle release assets), uncomment
-# the matching rows below so each committed lib gets exercised on its native runner.
+# linux-x86_64-musl is deliberately absent: Go's GOOS/GOARCH cannot distinguish musl from
+# glibc, so linux_amd64 vendors the glibc lib and there is no separate row to run.
 
 on:
   pull_request:
@@ -32,12 +32,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { goos: darwin, goarch: arm64, runner: macos-14 }
-          # Uncomment each row once its platform lib is committed under internal/cffi/lib/:
-          # - { goos: darwin,  goarch: amd64, runner: macos-15-intel }
-          # - { goos: linux,   goarch: amd64, runner: ubuntu-latest }
-          # - { goos: linux,   goarch: arm64, runner: ubuntu-24.04-arm }
-          # - { goos: windows, goarch: amd64, runner: windows-latest }
+          - { goos: darwin,  goarch: arm64, runner: macos-14 }
+          - { goos: darwin,  goarch: amd64, runner: macos-15-intel }
+          - { goos: linux,   goarch: amd64, runner: ubuntu-latest }
+          - { goos: linux,   goarch: arm64, runner: ubuntu-24.04-arm }
+          - { goos: windows, goarch: amd64, runner: windows-latest }
     defaults:
       run:
         shell: bash

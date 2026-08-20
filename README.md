@@ -290,7 +290,7 @@ ootle/                       # public `ootle` package (import .../ootle-go/ootle
 transport/                   # thin indexer-REST transport (no domain logic, no cgo)
 internal/cffi/               # the ONLY `import "C"`/`unsafe`; cgo wrapper over ootle_sdk.h
   lib/ootle_sdk.h            #   vendored C header (committed)
-  lib/libootle_sdk_ffi_c.a   #   vendored static lib (git-ignored; regenerated)
+  lib/<goos>_<goarch>/       #   vendored static lib per platform (committed)
 docs/vectors.md              # golden-vector comparison-mode (bytes vs semantic) reference
 scripts/build_native.sh      # builds the monorepo FFI crate + vendors header & lib
 scripts/sync_fixtures.sh     # re-vendors the golden vectors from the monorepo
