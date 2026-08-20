@@ -2,8 +2,8 @@
   "name": "generic_build/faucet_claim",
   "schema_version": 1,
   "provenance": {
-    "core_version": "0.35.0",
-    "git_rev": "184979ea3d66d6e0a1bcde32fdae049582dbb8b8",
+    "core_version": "0.39.0",
+    "git_rev": "dee549eb268a89412bde31f685359207b7789ab3",
     "generated_by": "ootle_sdk_core golden-vector generator"
   },
   "operation": "build_and_encode_faucet_claim",
@@ -64,7 +64,7 @@
       "recipient_public_key": "fea009ee8681783f3e9ed6152d3b7fc204a7ba78cde9808cdedae3dd221af013",
       "fee": 2000,
       "min_epoch": null,
-      "max_epoch": null,
+      "max_epoch": 1,
       "dry_run": false
     }
   },
@@ -115,7 +115,7 @@
                 "CallMethod": {
                   "args": [
                     {
-                      "Literal": "821907d000"
+                      "Literal": "1907d0"
                     }
                   ],
                   "call": {
@@ -141,9 +141,10 @@
             ],
             "instructions": [],
             "is_seal_signer_authorized": true,
-            "max_epoch": null,
+            "max_epoch": 1,
             "min_epoch": null,
-            "network": 38
+            "network": 38,
+            "nonce": 0
           }
         },
         "seal_signature": {

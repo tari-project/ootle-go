@@ -79,7 +79,10 @@ HEADER_SRC="$(find "${EXTRACT}" -name 'ootle_sdk.h' -print -quit)"
 
 mkdir -p "${PLAT_DIR}"
 echo "==> Vendoring header    -> ${VENDOR_DIR}/ootle_sdk.h"
-cp "${HEADER_SRC}" "${VENDOR_DIR}/ootle_sdk.h"
+# Normalise to LF: the header is byte-identical across platforms EXCEPT that the Windows
+# runner packages it with CRLF, so whichever platform is vendored last would otherwise decide
+# the committed line endings and churn the file on every re-vendor.
+tr -d '\r' < "${HEADER_SRC}" > "${VENDOR_DIR}/ootle_sdk.h"
 LIB_DEST="${PLAT_DIR}/libootle_sdk_ffi_c.a"
 echo "==> Vendoring staticlib -> ${LIB_DEST}"
 cp "${LIB_SRC}" "${LIB_DEST}"

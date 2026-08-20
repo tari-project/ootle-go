@@ -67,7 +67,7 @@ func TestTransactionBuilder_PublishTemplateWithFeeInstruction(t *testing.T) {
 		Instructions: []InstructionSpec{PublishTemplate(0)},
 		Blobs:        []BlobSpec{blob},
 	}
-	want.MaxEpoch = ptrU64(42)
+	want.MaxEpoch = 42
 	want.DryRun = true
 
 	sameTxJSON(t, got, want)

@@ -2,8 +2,8 @@
   "name": "stealth_transfer/revealed_output_multi",
   "schema_version": 1,
   "provenance": {
-    "core_version": "0.35.0",
-    "git_rev": "0634fac32d77faefa1a196071423ddbc3c4abbe5",
+    "core_version": "0.39.0",
+    "git_rev": "dee549eb268a89412bde31f685359207b7789ab3",
     "generated_by": "ootle_sdk_core golden-vector generator"
   },
   "operation": "build_and_encode_stealth_transfer",
@@ -44,7 +44,7 @@
       "revealed_input_amount": 2500000,
       "revealed_output_amount": 1500000,
       "min_epoch": null,
-      "max_epoch": null,
+      "max_epoch": 1,
       "dry_run": false,
       "pay_fee_from_revealed": false
     },
@@ -71,7 +71,7 @@
                 "CallMethod": {
                   "args": [
                     {
-                      "Literal": "821907d000"
+                      "Literal": "1907d0"
                     }
                   ],
                   "call": {
@@ -90,7 +90,7 @@
                       "Literal": "d88358200101010101010101010101010101010101010101010101010101010101010101"
                     },
                     {
-                      "Literal": "821a002625a000"
+                      "Literal": "1a002625a0"
                     }
                   ],
                   "call": {
@@ -204,9 +204,10 @@
               }
             ],
             "is_seal_signer_authorized": true,
-            "max_epoch": null,
+            "max_epoch": 1,
             "min_epoch": null,
-            "network": 38
+            "network": 38,
+            "nonce": 0
           }
         },
         "seal_signature": {

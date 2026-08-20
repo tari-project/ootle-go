@@ -104,6 +104,14 @@ func main() {
 }
 ```
 
+Every transaction carries a **mandatory validity window** since core 0.39.0: `max_epoch` is
+the last epoch it may be sequenced in. Leave `MaxEpoch` unset and the driver settles it from
+the indexer (`current epoch + ootle.DefaultValidityEpochs`); pin it with `.MaxEpoch(n)` for a
+longer-lived transaction. The network caps the window at `ootle.MaxTransactionValidityEpochs`
+(2160, ~30 days) — a wider pinned window is a local `VALIDATION` error rather than a
+`VALIDITY_WINDOW_TOO_LONG` abort you pay a fee to learn. A custom `Transport` that cannot
+answer `CurrentEpoch(ctx)` must set `MaxEpoch` explicitly.
+
 To estimate the fee first, build the same intent with `.DryRun()` (or call
 `intent.AsDryRun()`) and read `res.EstimatedFeeOr(0)` — a dry-run executes fully but never
 commits. For reproducible / golden-vector parity use `SendPublicTransferDeterministic` with a
@@ -202,7 +210,8 @@ When `Code == "ABORT"` (or a foreign-shard abort), `AbortCode` carries the canon
 abort sub-code — one of: `FOREIGN_PLEDGE_INPUT_CONFLICT`, `LOCK_INPUTS_FAILED`,
 `LOCK_OUTPUTS_FAILED`, `LOCK_INPUTS_OUTPUTS_FAILED`, `EXECUTION_FAILURE`,
 `ONE_OR_MORE_INPUTS_NOT_FOUND`, `INSUFFICIENT_FEES_PAID`, `FEE_PAYMENT_IN_MAIN_INTENT`,
-`EPOCH_EXPIRED`. Branch on `AbortCode` instead of parsing `Message`.
+`EPOCH_EXPIRED`, `VALIDITY_WINDOW_TOO_LONG`. Branch on `AbortCode` instead of parsing
+`Message`.
 
 ## Golden vectors & drift
 
@@ -274,6 +283,7 @@ ootle/                       # public `ootle` package (import .../ootle-go/ootle
   driver.go                  #   Client + two-phase SendPublicTransfer driver loop
   stealth.go                 #   confidential send (SendStealthTransfer*) + receive (ScanStealthOutput)
   result.go                  #   typed FinalizedResult / RejectReason / fee / diff / event types
+  epoch.go                   #   mandatory max_epoch settling (current epoch + DefaultValidityEpochs)
   e2e_test.go                #   live public e2e (build tag `e2e` + OOTLE_E2E gate; skips by default)
   stealth_e2e_test.go        #   live confidential send→receive round-trip (same `e2e` gate)
   testdata/fixtures/         #   vendored golden vectors (single source of truth: monorepo)

@@ -43,6 +43,11 @@ first use the wrapper asserts `ootle_abi_version()` matches and fails loudly oth
 **When the core ABI changes, bump this constant** and re-vendor — a stale lib mismatch is
 a hard error, not a silent mis-marshal.
 
+Caveat: the tag covers the **C surface**, not the JSON contract carried over it. Core 0.39.0
+made `max_epoch` mandatory without touching the C surface, so the tag stayed at
+`ootle-sdk-ffi-c/16`. Re-vendor **every** platform together (`make native-all`) — a lib left
+behind at an older core is a silent mis-marshal the ABI check cannot catch.
+
 ## Architecture
 
 The boundary records of the Rust core are mirrored as json-tagged Go structs, marshalled
@@ -71,6 +76,11 @@ exactly those ids — it never parses a component or derives a vault id itself. 
 
 ### Key source files in `ootle/`
 - `driver.go` — `Client` + the two-phase public-transfer driver loop.
+- `epoch.go` — settles the **mandatory** `max_epoch` (core 0.39.0+). An intent with `MaxEpoch == 0`
+  is settled to `CurrentEpoch() + DefaultValidityEpochs` via the optional `epochProvider`
+  transport capability (`GET /epoch-manager/stats`); no provider ⇒ a `VALIDATION` error, never a
+  silent zero window. A pinned window wider than `MaxTransactionValidityEpochs` (2160) is rejected
+  locally instead of aborting on-chain as `VALIDITY_WINDOW_TOO_LONG`.
 - `stealth.go` — confidential send (`SendStealthTransfer*`) + stateless receive
   (`ScanStealthOutput`). All stealth crypto stays in the core.
 - `ootle.go` — idiomatic types + build/encode entry points (`BuildAndEncode*`).

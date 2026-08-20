@@ -49,7 +49,7 @@ type stealthIntentFixture struct {
 	RevealedInputAmount  uint64              `json:"revealed_input_amount"`
 	RevealedOutputAmount uint64              `json:"revealed_output_amount"`
 	MinEpoch             *uint64             `json:"min_epoch"`
-	MaxEpoch             *uint64             `json:"max_epoch"`
+	MaxEpoch             uint64              `json:"max_epoch"`
 	DryRun               bool                `json:"dry_run"`
 }
 

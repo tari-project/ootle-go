@@ -319,7 +319,7 @@ func TestFaucetTakeIntentReproducesGoldenVector(t *testing.T) {
 
 	// Values mirror generic_build/faucet_claim.json.
 	const ownerPK = "fea009ee8681783f3e9ed6152d3b7fc204a7ba78cde9808cdedae3dd221af013"
-	intent := Faucet(XtrFaucetComponentAddress).Take(ownerPK).Intent(2000)
+	intent := Faucet(XtrFaucetComponentAddress).Take(ownerPK).MaxEpoch(1).Intent(2000)
 	if intent.faucetClaim == nil {
 		t.Fatal("Take().Intent() must carry a faucet claim")
 	}

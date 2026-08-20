@@ -167,6 +167,12 @@ func (c *Client) sendPublicTransfer(ctx context.Context, network Network, intent
 		}
 	}
 
+	// max_epoch is mandatory in the core intent: settle an unpinned one from the indexer
+	// before the build so the caller never has to make the epoch round-trip themselves.
+	if intent.MaxEpoch, nErr = c.settleMaxEpoch(ctx, intent.MaxEpoch, derefEpoch(intent.MinEpoch)); nErr != nil {
+		return FinalizedResult{}, nErr
+	}
+
 	intentJSON, mErr := intent.marshalJSON()
 	if mErr != nil {
 		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal intent: %v", mErr)}

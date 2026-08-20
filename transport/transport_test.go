@@ -357,3 +357,41 @@ func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
 		t.Fatalf("encode response: %v", err)
 	}
 }
+
+// CurrentEpoch reads the indexer's current epoch from GET /epoch-manager/stats, ignoring the
+// block height/hash the response also carries.
+func TestCurrentEpoch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/epoch-manager/stats" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		writeJSON(t, w, map[string]any{
+			"current_epoch":        1234,
+			"current_block_height": 99,
+			"current_block_hash":   "00",
+		})
+	}))
+	defer srv.Close()
+
+	epoch, err := NewClient(srv.URL).CurrentEpoch(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentEpoch: %v", err)
+	}
+	if epoch != 1234 {
+		t.Errorf("epoch = %d, want 1234", epoch)
+	}
+}
+
+// A non-2xx from the epoch endpoint surfaces as an *HTTPError, not a zero epoch.
+func TestCurrentEpochServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL).CurrentEpoch(context.Background())
+	var herr *HTTPError
+	if !errors.As(err, &herr) || herr.Status != http.StatusInternalServerError {
+		t.Fatalf("err = %v, want a 500 *HTTPError", err)
+	}
+}
