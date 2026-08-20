@@ -69,6 +69,12 @@ func (c *Client) settleMaxEpoch(ctx context.Context, maxEpoch, minEpoch uint64) 
 	if minEpoch > base {
 		base = minEpoch
 	}
+	// Saturate rather than wrap. Unreachable at real epoch rates, but a wrapped sum would land
+	// BELOW minEpoch — reintroducing, silently, the empty window the floor above exists to prevent.
+	const maxUint64 = ^uint64(0)
+	if base > maxUint64-DefaultValidityEpochs {
+		return maxUint64, nil
+	}
 	return base + DefaultValidityEpochs, nil
 }
 

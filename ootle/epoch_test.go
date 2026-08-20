@@ -134,6 +134,24 @@ func TestSettleMaxEpoch_PastMinEpochDoesNotLowerTheWindow(t *testing.T) {
 	}
 }
 
+// The settle arithmetic saturates instead of wrapping: a wrapped sum would land below MinEpoch
+// and sign the empty window the floor exists to prevent. Unreachable at real epoch rates.
+func TestSettleMaxEpoch_SaturatesInsteadOfWrapping(t *testing.T) {
+	const maxUint64 = ^uint64(0)
+	minEpoch := maxUint64 - 1
+	c := NewClient(&epochMockTransport{epoch: 1}, WithNetwork(NetworkLocalNet))
+	got, err := c.settleMaxEpoch(context.Background(), 0, minEpoch)
+	if err != nil {
+		t.Fatalf("settleMaxEpoch: %v", err)
+	}
+	if got < minEpoch {
+		t.Fatalf("settled MaxEpoch %d wrapped below MinEpoch %d — the window is empty", got, minEpoch)
+	}
+	if got != maxUint64 {
+		t.Fatalf("MaxEpoch = %d, want %d (saturated)", got, uint64(maxUint64))
+	}
+}
+
 // SendPublicTransfer settles an unpinned MaxEpoch from the transport and drives the full flow
 // with it, without mutating the caller's intent.
 func TestSendPublicTransfer_SettlesUnpinnedMaxEpoch(t *testing.T) {
