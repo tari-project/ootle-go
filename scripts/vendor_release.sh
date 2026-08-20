@@ -79,7 +79,10 @@ HEADER_SRC="$(find "${EXTRACT}" -name 'ootle_sdk.h' -print -quit)"
 
 mkdir -p "${PLAT_DIR}"
 echo "==> Vendoring header    -> ${VENDOR_DIR}/ootle_sdk.h"
-cp "${HEADER_SRC}" "${VENDOR_DIR}/ootle_sdk.h"
+# Normalise to LF: the header is byte-identical across platforms EXCEPT that the Windows
+# runner packages it with CRLF, so whichever platform is vendored last would otherwise decide
+# the committed line endings and churn the file on every re-vendor.
+tr -d '\r' < "${HEADER_SRC}" > "${VENDOR_DIR}/ootle_sdk.h"
 LIB_DEST="${PLAT_DIR}/libootle_sdk_ffi_c.a"
 echo "==> Vendoring staticlib -> ${LIB_DEST}"
 cp "${LIB_SRC}" "${LIB_DEST}"
@@ -89,6 +92,21 @@ cp "${LIB_SRC}" "${LIB_DEST}"
 MIDDLE="${BASE#${CRATE}-}"; MIDDLE="${MIDDLE%-${TARI_PLATFORM}.zip}"
 CRATE_VERSION="${MIDDLE%-*}"
 SHORT_SHA="${MIDDLE##*-}"
+
+# The upstream zip's own provenance.json records the linker's real native-lib needs
+# (`cargo rustc -- --print native-static-libs`). Carry it through: it is the source the cgo
+# LDFLAGS in internal/cffi/cffi.go are derived from when a platform fails to link with
+# undefined symbols (see docs/native-lib.md). Strip CR + any ANSI colour the build captured.
+UPSTREAM_PROV="$(find "${EXTRACT}" -name 'provenance.json' -print -quit)"
+NATIVE_LIBS=""
+if [[ -f "${UPSTREAM_PROV}" ]]; then
+  NATIVE_LIBS="$(sed -nE 's/.*"native_static_libs"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "${UPSTREAM_PROV}" \
+    | tr -d '\r' | sed -E 's/\x1b\[[0-9;]*m//g' | head -n1)"
+  # Escape for embedding as a JSON string. The capture rules out a bare quote, but a mingw path
+  # can carry backslashes, which would otherwise emit invalid JSON into the committed provenance.
+  NATIVE_LIBS="${NATIVE_LIBS//\\/\\\\}"
+  NATIVE_LIBS="${NATIVE_LIBS//\"/\\\"}"
+fi
 
 ABI="$(sed -nE 's/.*ExpectedABIVersion[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${REPO_DIR}/internal/cffi/cffi.go")"
 [[ -n "${ABI}" ]] || { echo "error: could not extract ExpectedABIVersion from cffi.go" >&2; exit 1; }
@@ -107,6 +125,7 @@ cat > "${PLAT_DIR}/provenance.json" <<EOF
   "abi": "${ABI}",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
+  "native_static_libs": "${NATIVE_LIBS}",
   "size_bytes": ${SIZE},
   "sha256": "${SHA}"
 }

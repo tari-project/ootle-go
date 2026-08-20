@@ -109,9 +109,10 @@ func (b *TransactionBuilder) MinEpoch(epoch uint64) *TransactionBuilder {
 	return b
 }
 
-// MaxEpoch sets the latest epoch this transaction is valid in.
+// MaxEpoch pins the last epoch this transaction may be sequenced in. Optional: left unset,
+// the driver settles it from the indexer's current epoch (current + DefaultValidityEpochs).
 func (b *TransactionBuilder) MaxEpoch(epoch uint64) *TransactionBuilder {
-	b.intent.MaxEpoch = &epoch
+	b.intent.MaxEpoch = epoch
 	return b
 }
 

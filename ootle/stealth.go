@@ -176,8 +176,11 @@ type StealthTransferIntent struct {
 	RevealedInputAmount  uint64                 `json:"revealed_input_amount"`
 	RevealedOutputAmount uint64                 `json:"revealed_output_amount"`
 	MinEpoch             *uint64                `json:"min_epoch"`
-	MaxEpoch             *uint64                `json:"max_epoch"`
-	DryRun               bool                   `json:"dry_run"`
+	// MaxEpoch is the last epoch this transfer may be sequenced in. It is MANDATORY since
+	// core 0.39.0; leave it 0 and the driver settles it from the indexer's current epoch
+	// (current + DefaultValidityEpochs).
+	MaxEpoch uint64 `json:"max_epoch"`
+	DryRun   bool   `json:"dry_run"`
 	// PayFeeFromRevealed pays the fee from the from-account's revealed (XTR) vault even when there is
 	// no revealed input. The fee is always charged from FromAccount via pay_fee, which only the
 	// account key can authorize; that key seals automatically when RevealedInputAmount > 0. A pure
@@ -198,7 +201,7 @@ type intentWire struct {
 	RevealedInputAmount  uint64              `json:"revealed_input_amount"`
 	RevealedOutputAmount uint64              `json:"revealed_output_amount"`
 	MinEpoch             *uint64             `json:"min_epoch"`
-	MaxEpoch             *uint64             `json:"max_epoch"`
+	MaxEpoch             uint64              `json:"max_epoch"`
 	DryRun               bool                `json:"dry_run"`
 	PayFeeFromRevealed   bool                `json:"pay_fee_from_revealed"`
 }
@@ -314,6 +317,12 @@ func (c *Client) SendStealthTransfer(ctx context.Context, intent StealthTransfer
 func (c *Client) sendStealthTransfer(ctx context.Context, network Network, intent StealthTransferIntent, keysJSON string) (result FinalizedResult, err error) {
 	netByte, nErr := resolveNetworkByte(network)
 	if nErr != nil {
+		return FinalizedResult{}, nErr
+	}
+
+	// max_epoch is mandatory in the core intent: settle an unpinned one from the indexer
+	// before the build so the caller never has to make the epoch round-trip themselves.
+	if intent.MaxEpoch, nErr = c.settleMaxEpoch(ctx, intent.MaxEpoch, derefEpoch(intent.MinEpoch)); nErr != nil {
 		return FinalizedResult{}, nErr
 	}
 
@@ -443,6 +452,11 @@ func BuildAndEncodeStealthTransfer(network Network, intent StealthTransferIntent
 	// end-to-end with Client.SendStealthTransfer for the random path.
 	if keys.Seed == "" {
 		return out, &Error{Code: "VALIDATION", Message: "BuildAndEncodeStealthTransfer requires keys.Seed (the 32-byte build seed); use Client.SendStealthTransfer for the random path"}
+	}
+	// max_epoch is mandatory and there is no transport here to settle it from: a zero would
+	// encode a transaction the network sees as already expired. Say so up front.
+	if intent.MaxEpoch == 0 {
+		return out, &Error{Code: "VALIDATION", Message: "BuildAndEncodeStealthTransfer requires intent.MaxEpoch (the transport-free path cannot read the current epoch); Client.SendStealthTransfer settles it for you"}
 	}
 	intentJSON, err := json.Marshal(intent)
 	if err != nil {

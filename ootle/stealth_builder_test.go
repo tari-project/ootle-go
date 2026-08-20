@@ -197,7 +197,7 @@ func TestStealthTransferBuilder_DryRunAndEpochs(t *testing.T) {
 	if intent.MinEpoch == nil || *intent.MinEpoch != 3 {
 		t.Fatalf("MinEpoch = %v, want 3", intent.MinEpoch)
 	}
-	if intent.MaxEpoch == nil || *intent.MaxEpoch != 9 {
+	if intent.MaxEpoch != 9 {
 		t.Fatalf("MaxEpoch = %v, want 9", intent.MaxEpoch)
 	}
 }

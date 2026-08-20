@@ -49,9 +49,10 @@ func (b *TransferBuilder) MinEpoch(epoch uint64) *TransferBuilder {
 	return b
 }
 
-// MaxEpoch sets the latest epoch this transfer is valid in.
+// MaxEpoch pins the last epoch this transfer may be sequenced in. Optional: left unset, the
+// driver settles it from the indexer's current epoch (current + DefaultValidityEpochs).
 func (b *TransferBuilder) MaxEpoch(epoch uint64) *TransferBuilder {
-	b.intent.MaxEpoch = &epoch
+	b.intent.MaxEpoch = epoch
 	return b
 }
 

@@ -78,7 +78,7 @@ func TestTransferBuilder_DryRunAndEpochs(t *testing.T) {
 	if got.MinEpoch == nil || *got.MinEpoch != 3 {
 		t.Fatalf("MinEpoch = %v, want 3", got.MinEpoch)
 	}
-	if got.MaxEpoch == nil || *got.MaxEpoch != 9 {
+	if got.MaxEpoch != 9 {
 		t.Fatalf("MaxEpoch = %v, want 9", got.MaxEpoch)
 	}
 }

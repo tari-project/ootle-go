@@ -420,3 +420,26 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, allow
 	}
 	return respBody, nil
 }
+
+// epochStatsResponse is the body of GET /epoch-manager/stats
+// (tari_indexer_client::types::GetEpochManagerStatsResponse). Only the current epoch is
+// decoded — the block height/hash are of no interest to the SDK.
+type epochStatsResponse struct {
+	CurrentEpoch uint64 `json:"current_epoch"`
+}
+
+// CurrentEpoch returns the indexer's current epoch via GET /epoch-manager/stats. The
+// SDK uses it to settle a transaction's mandatory max_epoch when the caller did not pin
+// one; it is not part of the Transport interface (see ootle.epochProvider), so a custom
+// transport need not implement it.
+func (c *Client) CurrentEpoch(ctx context.Context) (uint64, error) {
+	raw, err := c.do(ctx, http.MethodGet, "/epoch-manager/stats", nil, false)
+	if err != nil {
+		return 0, err
+	}
+	var resp epochStatsResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return 0, fmt.Errorf("transport: decode /epoch-manager/stats response: %w", err)
+	}
+	return resp.CurrentEpoch, nil
+}

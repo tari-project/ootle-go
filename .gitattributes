@@ -1,0 +1,12 @@
+# Keep LF in the working tree on every platform.
+#
+# Windows checkouts convert LF -> CRLF by default, which makes `gofmt -l` report every .go
+# file as unformatted (CRLF is not gofmt's output) and fails the `make check` fmt gate on the
+# windows/amd64 CI row. Pinning eol=lf keeps one canonical form everywhere.
+* text=auto eol=lf
+
+# The vendored native libs are binary and must never be eol-converted. The C header is NOT
+# excluded — it is text, and normalising it to LF is what we want: it matches what
+# vendor_release.sh writes, so the Windows runner's CRLF copy cannot churn the committed file.
+*.a binary
+*.zip binary

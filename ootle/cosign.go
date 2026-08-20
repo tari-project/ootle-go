@@ -77,6 +77,11 @@ func (c *Client) PrepareCosign(ctx context.Context, intent PublicTransferIntent)
 			Message: "PrepareCosign requires an empty intent.Inputs (the resolved path)",
 		}
 	}
+	// max_epoch is mandatory in the core intent; settle an unpinned one before the build so the
+	// co-signers all commit to the same window.
+	if intent.MaxEpoch, nErr = c.settleMaxEpoch(ctx, intent.MaxEpoch, derefEpoch(intent.MinEpoch)); nErr != nil {
+		return nil, nErr
+	}
 	intentJSON, mErr := intent.marshalJSON()
 	if mErr != nil {
 		return nil, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal intent: %v", mErr)}

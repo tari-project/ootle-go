@@ -74,7 +74,7 @@ type StealthTransferBuilder struct {
 	revealedOutput     uint64
 	payFeeFromRevealed bool
 	minEpoch           *uint64
-	maxEpoch           *uint64
+	maxEpoch           uint64
 	dryRun             bool
 }
 
@@ -147,9 +147,10 @@ func (b *StealthTransferBuilder) MinEpoch(epoch uint64) *StealthTransferBuilder 
 	return b
 }
 
-// MaxEpoch sets the latest epoch this transfer is valid in.
+// MaxEpoch pins the last epoch this transfer may be sequenced in. Optional: left unset, the
+// driver settles it from the indexer's current epoch (current + DefaultValidityEpochs).
 func (b *StealthTransferBuilder) MaxEpoch(epoch uint64) *StealthTransferBuilder {
-	b.maxEpoch = &epoch
+	b.maxEpoch = epoch
 	return b
 }
 

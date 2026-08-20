@@ -142,8 +142,11 @@ type PublicTransferIntent struct {
 	Fee             uint64            `json:"fee"`
 	Inputs          []InputRef        `json:"inputs"`
 	MinEpoch        *uint64           `json:"min_epoch"`
-	MaxEpoch        *uint64           `json:"max_epoch"`
-	DryRun          bool              `json:"dry_run"`
+	// MaxEpoch is the last epoch this transfer may be sequenced in. It is MANDATORY since
+	// core 0.39.0; leave it 0 and the driver settles it from the indexer's current epoch
+	// (current + DefaultValidityEpochs).
+	MaxEpoch uint64 `json:"max_epoch"`
+	DryRun   bool   `json:"dry_run"`
 }
 
 // AsDryRun returns a dry-run copy of this intent; the receiver is left unchanged. A

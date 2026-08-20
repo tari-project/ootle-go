@@ -2,8 +2,8 @@
   "name": "public_transfer/single_key_basic",
   "schema_version": 1,
   "provenance": {
-    "core_version": "0.35.0",
-    "git_rev": "184979ea3d66d6e0a1bcde32fdae049582dbb8b8",
+    "core_version": "0.39.0",
+    "git_rev": "dee549eb268a89412bde31f685359207b7789ab3",
     "generated_by": "ootle_sdk_core golden-vector generator"
   },
   "operation": "build_and_encode_public_transfer",
@@ -50,7 +50,7 @@
                 "CallMethod": {
                   "args": [
                     {
-                      "Literal": "821909c400"
+                      "Literal": "1909c4"
                     }
                   ],
                   "call": {
@@ -74,7 +74,7 @@
                       "Literal": "d88358202222222222222222222222222222222222222222222222222222222222222222"
                     },
                     {
-                      "Literal": "821a000f424000"
+                      "Literal": "1a000f4240"
                     }
                   ],
                   "call": {
@@ -103,7 +103,8 @@
             "is_seal_signer_authorized": true,
             "max_epoch": 10,
             "min_epoch": 1,
-            "network": 38
+            "network": 38,
+            "nonce": 0
           }
         },
         "seal_signature": {

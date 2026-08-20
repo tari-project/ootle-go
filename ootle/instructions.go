@@ -442,8 +442,10 @@ type GenericTransactionIntent struct {
 	ExtraInputs []InputRef `json:"extra_inputs"`
 	// MinEpoch is the optional earliest epoch this transaction is valid in.
 	MinEpoch *uint64 `json:"min_epoch"`
-	// MaxEpoch is the optional latest epoch this transaction is valid in.
-	MaxEpoch *uint64 `json:"max_epoch"`
+	// MaxEpoch is the last epoch this transaction may be sequenced in. It is MANDATORY since
+	// core 0.39.0; leave it 0 and the driver settles it from the indexer's current epoch
+	// (current + DefaultValidityEpochs).
+	MaxEpoch uint64 `json:"max_epoch"`
 	// DryRun marks this as a dry run.
 	DryRun bool `json:"dry_run"`
 
@@ -476,8 +478,10 @@ type FaucetClaimIntent struct {
 	Fee uint64 `json:"fee"`
 	// MinEpoch is the optional earliest epoch this transaction is valid in.
 	MinEpoch *uint64 `json:"min_epoch"`
-	// MaxEpoch is the optional latest epoch this transaction is valid in.
-	MaxEpoch *uint64 `json:"max_epoch"`
+	// MaxEpoch is the last epoch this transaction may be sequenced in. It is MANDATORY since
+	// core 0.39.0; leave it 0 and the driver settles it from the indexer's current epoch
+	// (current + DefaultValidityEpochs).
+	MaxEpoch uint64 `json:"max_epoch"`
 	// DryRun marks this as a dry run (e.g. for fee estimation).
 	DryRun bool `json:"dry_run"`
 }
@@ -524,6 +528,7 @@ type FaucetBuilder struct {
 	faucetComponent string
 	instructions    []InstructionSpec
 	claim           *FaucetClaimIntent
+	maxEpoch        uint64
 }
 
 // XtrFaucetComponentAddress is the canonical testnet TARI faucet component address. Pass it to Faucet()
@@ -568,6 +573,16 @@ func (f *FaucetBuilder) Deposit(accountComponent, bucketLabel string) *FaucetBui
 	return f
 }
 
+// MaxEpoch pins the last epoch a Take claim may be sequenced in. Optional and order-independent
+// (it is applied by Intent): left unset, the driver settles it from the indexer's current epoch
+// (current + DefaultValidityEpochs). Like the rest of the claim it needs a preceding Take —
+// without one Intent returns a fee-source-less intent that fails loudly on send, and this pin is
+// discarded with it.
+func (f *FaucetBuilder) MaxEpoch(epoch uint64) *FaucetBuilder {
+	f.maxEpoch = epoch
+	return f
+}
+
 // Instructions returns the composed main-phase instruction sequence (TakeFreeCoins/Deposit). For the
 // self-funding Take path, use Intent.
 func (f *FaucetBuilder) Instructions() []InstructionSpec {
@@ -585,6 +600,7 @@ func (f *FaucetBuilder) Intent(fee uint64) GenericTransactionIntent {
 	}
 	claim := *f.claim
 	claim.Fee = fee
+	claim.MaxEpoch = f.maxEpoch
 	// The core reads the fee from the claim; the outer Fee is unused on this path.
 	return GenericTransactionIntent{faucetClaim: &claim}
 }
