@@ -93,6 +93,17 @@ MIDDLE="${BASE#${CRATE}-}"; MIDDLE="${MIDDLE%-${TARI_PLATFORM}.zip}"
 CRATE_VERSION="${MIDDLE%-*}"
 SHORT_SHA="${MIDDLE##*-}"
 
+# The upstream zip's own provenance.json records the linker's real native-lib needs
+# (`cargo rustc -- --print native-static-libs`). Carry it through: it is the source the cgo
+# LDFLAGS in internal/cffi/cffi.go are derived from when a platform fails to link with
+# undefined symbols (see docs/native-lib.md). Strip CR + any ANSI colour the build captured.
+UPSTREAM_PROV="$(find "${EXTRACT}" -name 'provenance.json' -print -quit)"
+NATIVE_LIBS=""
+if [[ -f "${UPSTREAM_PROV}" ]]; then
+  NATIVE_LIBS="$(sed -nE 's/.*"native_static_libs"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "${UPSTREAM_PROV}" \
+    | tr -d '\r' | sed -E 's/\x1b\[[0-9;]*m//g' | head -n1)"
+fi
+
 ABI="$(sed -nE 's/.*ExpectedABIVersion[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${REPO_DIR}/internal/cffi/cffi.go")"
 [[ -n "${ABI}" ]] || { echo "error: could not extract ExpectedABIVersion from cffi.go" >&2; exit 1; }
 SIZE="$(wc -c < "${LIB_DEST}" | tr -d ' ')"
@@ -110,6 +121,7 @@ cat > "${PLAT_DIR}/provenance.json" <<EOF
   "abi": "${ABI}",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
+  "native_static_libs": "${NATIVE_LIBS}",
   "size_bytes": ${SIZE},
   "sha256": "${SHA}"
 }

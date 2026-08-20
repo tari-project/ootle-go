@@ -9,6 +9,7 @@
   "abi": "ootle-sdk-ffi-c/16",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
+  "native_static_libs": "-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc",
   "size_bytes": 54157362,
   "sha256": "33c3d8395af46e680861bca407fbb71367bd0fba59e9b714bf27223ef7f03296"
 }

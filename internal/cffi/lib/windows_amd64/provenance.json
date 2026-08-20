@@ -9,6 +9,7 @@
   "abi": "ootle-sdk-ffi-c/16",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
+  "native_static_libs": "-lwinapi_advapi32 -lwinapi_cfgmgr32 -lwinapi_gdi32 -lwinapi_kernel32 -lwinapi_msimg32 -lwinapi_ole32 -lwinapi_opengl32 -lwinapi_shell32 -lwinapi_user32 -lwinapi_winspool -lbcrypt -ladvapi32 -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp",
   "size_bytes": 39665234,
   "sha256": "7cd0b85c735977187b387a4bc25af481317ac1b658ce61bb9d822d99868bb8b2"
 }
