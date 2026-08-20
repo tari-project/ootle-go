@@ -575,7 +575,9 @@ func (f *FaucetBuilder) Deposit(accountComponent, bucketLabel string) *FaucetBui
 
 // MaxEpoch pins the last epoch a Take claim may be sequenced in. Optional and order-independent
 // (it is applied by Intent): left unset, the driver settles it from the indexer's current epoch
-// (current + DefaultValidityEpochs).
+// (current + DefaultValidityEpochs). Like the rest of the claim it needs a preceding Take —
+// without one Intent returns a fee-source-less intent that fails loudly on send, and this pin is
+// discarded with it.
 func (f *FaucetBuilder) MaxEpoch(epoch uint64) *FaucetBuilder {
 	f.maxEpoch = epoch
 	return f

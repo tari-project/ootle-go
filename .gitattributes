@@ -5,6 +5,8 @@
 # windows/amd64 CI row. Pinning eol=lf keeps one canonical form everywhere.
 * text=auto eol=lf
 
-# The vendored native libs and the C header they ship with: never touched by eol conversion.
+# The vendored native libs are binary and must never be eol-converted. The C header is NOT
+# excluded — it is text, and normalising it to LF is what we want: it matches what
+# vendor_release.sh writes, so the Windows runner's CRLF copy cannot churn the committed file.
 *.a binary
 *.zip binary

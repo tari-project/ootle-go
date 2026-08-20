@@ -69,20 +69,68 @@ func TestSettleMaxEpoch_NoProviderIsValidationError(t *testing.T) {
 	}
 }
 
-// A caller-pinned window wider than the network cap is rejected locally, so the abort never
-// costs a fee on-chain (VALIDITY_WINDOW_TOO_LONG).
-func TestSettleMaxEpoch_WindowTooLong(t *testing.T) {
-	c := NewClient(&epochMockTransport{epoch: 1}, WithNetwork(NetworkLocalNet))
-	minEpoch := uint64(100)
-	_, err := c.settleMaxEpoch(context.Background(), minEpoch+MaxTransactionValidityEpochs+1, minEpoch)
+// A pinned MaxEpoch is taken as given, however far out: consensus measures its cap from the
+// epoch the transaction is sequenced in, which the host cannot know, and the SDK cannot read the
+// live constant. A duplicated local limit would refuse valid transactions on a network with a
+// raised ceiling.
+func TestSettleMaxEpoch_FarPinIsNotSecondGuessed(t *testing.T) {
+	c := NewClient(&epochMockTransport{epoch: 5000}, WithNetwork(NetworkLocalNet))
+	pin := 5000 + MaxTransactionValidityEpochs*10
+	got, err := c.settleMaxEpoch(context.Background(), pin, 0)
+	if err != nil {
+		t.Fatalf("settleMaxEpoch: %v", err)
+	}
+	if got != pin {
+		t.Fatalf("MaxEpoch = %d, want %d (the caller's pin, unmodified)", got, pin)
+	}
+}
+
+// The window rule the host CAN decide alone: a pin below MinEpoch can never contain a
+// sequenceable epoch, so it is rejected without needing the current epoch.
+func TestSettleMaxEpoch_EmptyWindowRejected(t *testing.T) {
+	c := NewClient(&epochMockTransport{epoch: 100}, WithNetwork(NetworkLocalNet))
+	_, err := c.settleMaxEpoch(context.Background(), 500, 1000)
 	var oerr *Error
 	if !errors.As(err, &oerr) || oerr.Code != "VALIDATION" {
 		t.Fatalf("err = %v, want a VALIDATION *Error", err)
 	}
+	if !strings.Contains(oerr.Message, "empty validity window") {
+		t.Errorf("message = %q, want it to name the empty window", oerr.Message)
+	}
 
-	// Exactly at the cap is accepted.
-	if _, err := c.settleMaxEpoch(context.Background(), minEpoch+MaxTransactionValidityEpochs, minEpoch); err != nil {
-		t.Fatalf("window at the cap must be accepted, got %v", err)
+	// MaxEpoch == MinEpoch is a single-epoch window, which is legal.
+	if _, err := c.settleMaxEpoch(context.Background(), 1000, 1000); err != nil {
+		t.Fatalf("a single-epoch window must be accepted, got %v", err)
+	}
+}
+
+// A MinEpoch beyond the current epoch is a legal pin, so an unpinned MaxEpoch settles from
+// MinEpoch — never from `current` alone, which would sign a window that is empty by
+// construction (max_epoch below the caller's own min_epoch).
+func TestSettleMaxEpoch_SettlesFromMinEpochFloor(t *testing.T) {
+	c := NewClient(&epochMockTransport{epoch: 100}, WithNetwork(NetworkLocalNet))
+	got, err := c.settleMaxEpoch(context.Background(), 0, 1000)
+	if err != nil {
+		t.Fatalf("settleMaxEpoch: %v", err)
+	}
+	if want := 1000 + DefaultValidityEpochs; got != want {
+		t.Fatalf("MaxEpoch = %d, want %d (MinEpoch + DefaultValidityEpochs)", got, want)
+	}
+	if got <= 1000 {
+		t.Fatalf("settled MaxEpoch %d is not after MinEpoch 1000 — the window is empty", got)
+	}
+}
+
+// A MinEpoch already in the past does not drag the window backwards: the current epoch is the
+// floor in that direction.
+func TestSettleMaxEpoch_PastMinEpochDoesNotLowerTheWindow(t *testing.T) {
+	c := NewClient(&epochMockTransport{epoch: 5000}, WithNetwork(NetworkLocalNet))
+	got, err := c.settleMaxEpoch(context.Background(), 0, 1)
+	if err != nil {
+		t.Fatalf("settleMaxEpoch: %v", err)
+	}
+	if want := 5000 + DefaultValidityEpochs; got != want {
+		t.Fatalf("MaxEpoch = %d, want %d (current + DefaultValidityEpochs)", got, want)
 	}
 }
 

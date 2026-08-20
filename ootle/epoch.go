@@ -3,7 +3,9 @@
 // Since core 0.39.0 every transaction carries a `max_epoch`: the last epoch it may be
 // sequenced in. It is no longer optional, so an intent that leaves MaxEpoch at 0 has to be
 // settled before it reaches the core. settleMaxEpoch does that from the indexer's current
-// epoch, keeping the caller free of an epoch round-trip they did not ask for.
+// epoch, keeping the caller free of an epoch round-trip they did not ask for. A caller-pinned
+// MaxEpoch is taken as given — the network's validity-window cap is measured from the epoch the
+// transaction is sequenced in, which the host cannot know, so it is not second-guessed here.
 
 package ootle
 
@@ -19,9 +21,15 @@ import (
 const DefaultValidityEpochs uint64 = 10
 
 // MaxTransactionValidityEpochs mirrors the network's `max_transaction_validity_epochs`
-// consensus constant (~30 days). A transaction whose window exceeds it is aborted with
-// VALIDITY_WINDOW_TOO_LONG; the SDK rejects such an intent locally instead of paying a fee
-// to learn it.
+// consensus constant (~30 days): a transaction whose `max_epoch` is further than this past the
+// epoch it is *sequenced* in aborts as VALIDITY_WINDOW_TOO_LONG.
+//
+// It is exported as a reference for callers choosing a MaxEpoch pin, and is deliberately NOT
+// enforced here. Consensus measures the window from the pinned execution epoch
+// (`window_abort_reason(pinned_epoch, max_epoch)`), which only the network knows at sequencing
+// time — and the SDK cannot read the live constant. Enforcing a duplicated copy locally would
+// wrongly refuse a valid transaction against a network with a raised ceiling; walletd records
+// the same reasoning for its own copy of this value.
 const MaxTransactionValidityEpochs uint64 = 2160
 
 // epochProvider is the optional transport capability to read the indexer's current epoch
@@ -32,14 +40,13 @@ type epochProvider interface {
 	CurrentEpoch(ctx context.Context) (uint64, error)
 }
 
-// settleMaxEpoch resolves an intent's mandatory max_epoch. A non-zero maxEpoch is the
-// caller's own pin and is returned unchanged (bounds-checked only); a zero one is settled
-// to current + DefaultValidityEpochs from the transport. Without an epoch-capable
-// transport a zero maxEpoch is a VALIDATION error rather than a silent 0 the network would
-// reject as expired.
+// settleMaxEpoch resolves an intent's mandatory max_epoch. A non-zero maxEpoch is the caller's
+// own pin and is returned unchanged; a zero one is settled from the transport to
+// max(current, minEpoch) + DefaultValidityEpochs. Without an epoch-capable transport a zero
+// maxEpoch is a VALIDATION error rather than a silent 0 the network would reject as expired.
 func (c *Client) settleMaxEpoch(ctx context.Context, maxEpoch, minEpoch uint64) (uint64, error) {
 	if maxEpoch != 0 {
-		if err := checkValidityWindow(maxEpoch, minEpoch); err != nil {
+		if err := checkWindowIsNonEmpty(maxEpoch, minEpoch); err != nil {
 			return 0, err
 		}
 		return maxEpoch, nil
@@ -55,27 +62,31 @@ func (c *Client) settleMaxEpoch(ctx context.Context, maxEpoch, minEpoch uint64) 
 	if err != nil {
 		return 0, err
 	}
-	return current + DefaultValidityEpochs, nil
+	// Settle from whichever bound is later. A MinEpoch beyond the current epoch is a legal pin
+	// (the transaction is not sequenceable before it), so measuring only from `current` would
+	// sign a window that is empty by construction — max_epoch below the caller's own min_epoch.
+	base := current
+	if minEpoch > base {
+		base = minEpoch
+	}
+	return base + DefaultValidityEpochs, nil
 }
 
-// checkValidityWindow rejects a caller-pinned window wider than the network allows, so the
-// abort surfaces here instead of as a VALIDITY_WINDOW_TOO_LONG reject that costs a fee. A
-// zero minEpoch means "unpinned", which the network measures from the current epoch — that
-// window cannot be checked locally and is left to the engine.
-func checkValidityWindow(maxEpoch, minEpoch uint64) error {
-	if minEpoch == 0 || maxEpoch < minEpoch {
+// checkWindowIsNonEmpty rejects a pinned window that can never contain a sequenceable epoch. This
+// is the only window rule the host can decide on its own: it needs no knowledge of the current
+// epoch and no duplicated consensus constant. The network's own cap is measured from the
+// execution epoch and is left to the network (see MaxTransactionValidityEpochs).
+func checkWindowIsNonEmpty(maxEpoch, minEpoch uint64) error {
+	if minEpoch == 0 || maxEpoch >= minEpoch {
 		return nil
 	}
-	if maxEpoch-minEpoch > MaxTransactionValidityEpochs {
-		return &Error{
-			Code: "VALIDATION",
-			Message: fmt.Sprintf(
-				"validity window %d epochs (MinEpoch %d → MaxEpoch %d) exceeds the network cap of %d",
-				maxEpoch-minEpoch, minEpoch, maxEpoch, MaxTransactionValidityEpochs,
-			),
-		}
+	return &Error{
+		Code: "VALIDATION",
+		Message: fmt.Sprintf(
+			"empty validity window: MaxEpoch %d is before MinEpoch %d, so the transaction can never be sequenced",
+			maxEpoch, minEpoch,
+		),
 	}
-	return nil
 }
 
 // derefEpoch reads an optional epoch pin, mapping "unset" to 0 (min_epoch stays optional in

@@ -79,8 +79,10 @@ exactly those ids — it never parses a component or derives a vault id itself. 
 - `epoch.go` — settles the **mandatory** `max_epoch` (core 0.39.0+). An intent with `MaxEpoch == 0`
   is settled to `CurrentEpoch() + DefaultValidityEpochs` via the optional `epochProvider`
   transport capability (`GET /epoch-manager/stats`); no provider ⇒ a `VALIDATION` error, never a
-  silent zero window. A pinned window wider than `MaxTransactionValidityEpochs` (2160) is rejected
-  locally instead of aborting on-chain as `VALIDITY_WINDOW_TOO_LONG`.
+  silent zero window; `MinEpoch` beyond the current epoch raises the floor so the settled window is
+  never empty. A caller-pinned `MaxEpoch` is taken as given: consensus measures its cap from the
+  *pinned execution epoch*, not from `min_epoch`, so the host cannot evaluate it — the local rule is
+  only that `MaxEpoch >= MinEpoch`.
 - `stealth.go` — confidential send (`SendStealthTransfer*`) + stateless receive
   (`ScanStealthOutput`). All stealth crypto stays in the core.
 - `ootle.go` — idiomatic types + build/encode entry points (`BuildAndEncode*`).

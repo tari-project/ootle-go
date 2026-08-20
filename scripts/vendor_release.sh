@@ -102,6 +102,10 @@ NATIVE_LIBS=""
 if [[ -f "${UPSTREAM_PROV}" ]]; then
   NATIVE_LIBS="$(sed -nE 's/.*"native_static_libs"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "${UPSTREAM_PROV}" \
     | tr -d '\r' | sed -E 's/\x1b\[[0-9;]*m//g' | head -n1)"
+  # Escape for embedding as a JSON string. The capture rules out a bare quote, but a mingw path
+  # can carry backslashes, which would otherwise emit invalid JSON into the committed provenance.
+  NATIVE_LIBS="${NATIVE_LIBS//\\/\\\\}"
+  NATIVE_LIBS="${NATIVE_LIBS//\"/\\\"}"
 fi
 
 ABI="$(sed -nE 's/.*ExpectedABIVersion[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "${REPO_DIR}/internal/cffi/cffi.go")"

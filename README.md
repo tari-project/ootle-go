@@ -107,10 +107,13 @@ func main() {
 Every transaction carries a **mandatory validity window** since core 0.39.0: `max_epoch` is
 the last epoch it may be sequenced in. Leave `MaxEpoch` unset and the driver settles it from
 the indexer (`current epoch + ootle.DefaultValidityEpochs`); pin it with `.MaxEpoch(n)` for a
-longer-lived transaction. The network caps the window at `ootle.MaxTransactionValidityEpochs`
-(2160, ~30 days) — a wider pinned window is a local `VALIDATION` error rather than a
-`VALIDITY_WINDOW_TOO_LONG` abort you pay a fee to learn. A custom `Transport` that cannot
-answer `CurrentEpoch(ctx)` must set `MaxEpoch` explicitly.
+longer-lived transaction; with `MinEpoch` set beyond the current epoch, the settled window starts
+from `MinEpoch` instead. The network caps the window at `ootle.MaxTransactionValidityEpochs`
+(2160, ~30 days) measured from the epoch the transaction is *sequenced* in — the SDK exports the
+constant as a reference but does not enforce it, since only the network knows that epoch and the
+live constant. The one window rule checked locally is that a pinned `MaxEpoch` is not before
+`MinEpoch`. A custom `Transport` that cannot answer `CurrentEpoch(ctx)` must set `MaxEpoch`
+explicitly.
 
 To estimate the fee first, build the same intent with `.DryRun()` (or call
 `intent.AsDryRun()`) and read `res.EstimatedFeeOr(0)` — a dry-run executes fully but never
