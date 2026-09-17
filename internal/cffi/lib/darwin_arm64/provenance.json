@@ -2,14 +2,14 @@
   "platform": "darwin_arm64",
   "source": "release-asset",
   "monorepo_remote": "https://github.com/tari-project/tari-ootle",
-  "monorepo_commit": "8b16884",
-  "release_tag": "v0.39.1",
-  "asset": "ootle_sdk_ffi_c-0.39.1-8b16884-macos-arm64.zip",
-  "crate_version": "0.39.1",
+  "monorepo_commit": "ac73128",
+  "release_tag": "v0.41.0",
+  "asset": "ootle_sdk_ffi_c-0.41.0-ac73128-macos-arm64.zip",
+  "crate_version": "0.41.0",
   "abi": "ootle-sdk-ffi-c/16",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
   "native_static_libs": "-liconv -lSystem -lc -lm",
-  "size_bytes": 36416624,
-  "sha256": "c43bf34347ed9d70cf9645405ee0981c2dd1abc358837ebc963a26638c36947d"
+  "size_bytes": 36663248,
+  "sha256": "21c43139a7d2a9775104933467360e4d05a985d8cba22e38c10d40d3df1cd4fe"
 }

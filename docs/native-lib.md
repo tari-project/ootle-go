@@ -72,7 +72,7 @@ undefined symbols, add the missing `-l…` to that platform's `#cgo` line.
 ## ABI bumps (do not skip)
 
 The header `ootle_sdk.h` and `ExpectedABIVersion` in `internal/cffi/cffi.go` (currently
-`ootle-sdk-ffi-c/12`) are a frozen contract. If the monorepo changed the C ABI:
+`ootle-sdk-ffi-c/16`) are a frozen contract. If the monorepo changed the C ABI:
 
 1. `make native` re-vendors the header automatically, so it can never drift from its lib.
 2. The new lib reports a new `ootle_abi_version()`. The wrapper asserts it matches
