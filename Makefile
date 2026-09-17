@@ -18,16 +18,18 @@ native:
 native-all:
 	@echo "Trigger the all-platform vendoring against a tari-ootle release tag:"
 	@echo "  gh workflow run native-libs.yml -f release_tag=<tag> [-f commit=<sha>]"
-	@command -v gh >/dev/null 2>&1 && { \
-	  read -p "release_tag (blank to skip): " tag; \
-	  [ -n "$$tag" ] || exit 0; \
-	  read -p "commit (blank = the tag's own commit): " commit; \
-	  if [ -n "$$commit" ]; then \
-	    gh workflow run native-libs.yml -f release_tag="$$tag" -f commit="$$commit"; \
-	  else \
-	    gh workflow run native-libs.yml -f release_tag="$$tag"; \
-	  fi; \
-	} || echo "(install the GitHub CLI 'gh' to trigger it from here)"
+	@if ! command -v gh >/dev/null 2>&1; then \
+	  echo "(install the GitHub CLI 'gh' to trigger it from here)"; \
+	  exit 0; \
+	fi; \
+	read -p "release_tag (blank to skip): " tag; \
+	[ -n "$$tag" ] || exit 0; \
+	read -p "commit (blank = the tag's own commit): " commit; \
+	if [ -n "$$commit" ]; then \
+	  gh workflow run native-libs.yml -f release_tag="$$tag" -f commit="$$commit"; \
+	else \
+	  gh workflow run native-libs.yml -f release_tag="$$tag"; \
+	fi
 
 # Re-vendor the golden-vector fixtures from the monorepo (single source of truth).
 # The drift test (TestFixtureDrift) fails if the vendored copy diverges from the source.
