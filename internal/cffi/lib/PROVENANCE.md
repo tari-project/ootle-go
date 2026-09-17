@@ -6,8 +6,8 @@ from. See `docs/native-lib.md`.
 
 | Platform | Crate | ABI | Commit | Profile | Size | sha256 |
 |---|---|---|---|---|---|---|
-| darwin_amd64 | 0.39.1 | ootle-sdk-ffi-c/16 | 8b16884 | release | 36.5MB | 65dcfdabaaa40b7e… |
-| darwin_arm64 | 0.39.1 | ootle-sdk-ffi-c/16 | 8b16884 | release | 34.7MB | c43bf34347ed9d70… |
-| linux_amd64 | 0.39.1 | ootle-sdk-ffi-c/16 | 8b16884 | release | 51.6MB | 33c3d8395af46e68… |
-| linux_arm64 | 0.39.1 | ootle-sdk-ffi-c/16 | 8b16884 | release | 51.5MB | 2f4845ab950affce… |
-| windows_amd64 | 0.39.1 | ootle-sdk-ffi-c/16 | 8b16884 | release | 37.8MB | 7cd0b85c73597718… |
+| darwin_amd64 | 0.41.0 | ootle-sdk-ffi-c/16 | ac73128 | release | 36.9MB | ab16ac6c7965b969… |
+| darwin_arm64 | 0.41.0 | ootle-sdk-ffi-c/16 | ac73128 | release | 35MB | 21c43139a7d2a977… |
+| linux_amd64 | 0.41.0 | ootle-sdk-ffi-c/16 | ac73128 | release | 52.1MB | 05550dddc99f543f… |
+| linux_arm64 | 0.41.0 | ootle-sdk-ffi-c/16 | ac73128 | release | 51.8MB | 4043e3718277fc78… |
+| windows_amd64 | 0.41.0 | ootle-sdk-ffi-c/16 | ac73128 | release | 38.2MB | f938e9386a2ef6ad… |
