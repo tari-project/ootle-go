@@ -64,8 +64,10 @@ trap 'rm -rf "${WORK}"' EXIT
 # another. The short sha in the asset name may be longer than the 7 chars matched here, hence
 # the trailing wildcard.
 if [[ -z "${COMMIT}" ]]; then
-  COMMIT="$(gh api "repos/${REPO}/commits/${TAG}" --jq '.sha' 2>/dev/null || true)"
-  [[ -n "${COMMIT}" ]] || { echo "error: could not resolve the commit for ${REPO}@${TAG}; pass --commit" >&2; exit 1; }
+  # gh's own stderr is left alone: an expired token or a network blip must not read as
+  # "this tag has no commit", which would send the maintainer looking for --commit.
+  COMMIT="$(gh api "repos/${REPO}/commits/${TAG}" --jq '.sha' || true)"
+  [[ -n "${COMMIT}" ]] || { echo "error: could not resolve the commit for ${REPO}@${TAG} (see the gh error above); pass --commit to pin one" >&2; exit 1; }
 fi
 SHORT_SHA="${COMMIT:0:7}"
 
@@ -76,6 +78,11 @@ gh release download "${TAG}" --repo "${REPO}" --dir "${WORK}" \
   --pattern "${CRATE}-*-${SHORT_SHA}*-${TARI_PLATFORM}.zip" \
   --pattern "${CRATE}-*-${SHORT_SHA}*-${TARI_PLATFORM}.zip.sha256"
 
+# The local glob deliberately drops ${SHORT_SHA}: it inspects what actually landed in WORK
+# rather than re-asserting the download pattern, so an asset the pattern let through for a
+# different commit is still caught by the == 1 check below.
+# The "no asset" arm is defence in depth — `gh release download` already exits non-zero when
+# no --pattern matches, so under `set -e` a wrong commit dies above, not here.
 mapfile -t ZIPS < <(ls "${WORK}"/${CRATE}-*-${TARI_PLATFORM}.zip 2>/dev/null)
 (( ${#ZIPS[@]} > 0 )) || { echo "error: no ${TARI_PLATFORM} asset for ${SHORT_SHA} in ${REPO}@${TAG}" >&2; exit 1; }
 (( ${#ZIPS[@]} == 1 )) || { echo "error: ${#ZIPS[@]} ${TARI_PLATFORM} assets matched ${SHORT_SHA}: ${ZIPS[*]}" >&2; exit 1; }

@@ -92,17 +92,25 @@ You can only natively build your host locally. The full set is produced by the
 | Target | Runner |
 |---|---|
 | darwin/arm64 | macos-14 |
-| darwin/amd64 | macos-13 |
+| darwin/amd64 | macos-15-intel |
 | linux/amd64 | ubuntu-latest |
 | linux/arm64 | ubuntu-24.04-arm |
 | windows/amd64 | windows-latest (GNU toolchain) |
 
-Trigger it against a specific monorepo ref; each job builds → strips → verifies
-(`go build` + golden vectors) → uploads its lib, and an aggregation job commits all
-platforms in one PR and regenerates `PROVENANCE.md`. A private monorepo needs a
-`MONOREPO_TOKEN` repo secret with read access.
+Trigger it against a tari-ootle **release tag**; each job downloads + checksum-verifies that
+platform's asset → vendors it → verifies (`go build` + golden vectors) → uploads its lib, and
+an aggregation job commits all platforms in one PR and regenerates `PROVENANCE.md`. A private
+monorepo needs a `MONOREPO_TOKEN` repo secret with read access.
 
-`make native-all` is the entry point.
+`make native-all` is the entry point; it dispatches
+
+```sh
+gh workflow run native-libs.yml -f release_tag=<tag> [-f commit=<sha>]
+```
+
+A release can carry assets from more than one commit (v0.41.0 holds both `43d6617` and
+`ac73128`), in which case the build whose commit the **tag itself points at** is vendored.
+Pass `commit` only to pin a different one — e.g. when the tag's own commit has no assets.
 
 ---
 
@@ -112,4 +120,7 @@ platforms in one PR and regenerates `PROVENANCE.md`. A private monorepo needs a
 - [ ] `TestGoldenVectors`, `TestFixtureDrift`, `TestGoldenVectors_CoverageParity` pass.
 - [ ] If the ABI changed: `ExpectedABIVersion` bumped, header re-vendored, Go types reconciled.
 - [ ] `PROVENANCE.md` + every `provenance.json` updated.
-- [ ] All platforms were built from the **same** monorepo ref.
+- [ ] All platforms were built from the **same** monorepo ref. `vendor_release.sh` enforces
+      this by resolving the tag's target commit and refusing an ambiguous asset match; if a
+      release carries builds from several commits, pin one with `--commit` (workflow input
+      `commit`) rather than letting each platform pick its own.

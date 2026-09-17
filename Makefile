@@ -12,13 +12,21 @@
 native:
 	./scripts/build_native.sh
 
-# Maintainer: rebuild ALL platforms via the GitHub Actions matrix (native runners).
+# Maintainer: re-vendor ALL platforms via the GitHub Actions matrix (native runners).
+# The workflow takes a tari-ootle RELEASE TAG (it downloads that release's assets), and
+# optionally a commit when the tag carries builds from more than one.
 native-all:
-	@echo "Trigger the all-platform build against a monorepo ref (tag/SHA):"
-	@echo "  gh workflow run native-libs.yml -f monorepo_ref=<ref>"
+	@echo "Trigger the all-platform vendoring against a tari-ootle release tag:"
+	@echo "  gh workflow run native-libs.yml -f release_tag=<tag> [-f commit=<sha>]"
 	@command -v gh >/dev/null 2>&1 && { \
-	  read -p "monorepo_ref (blank to skip): " ref; \
-	  [ -n "$$ref" ] && gh workflow run native-libs.yml -f monorepo_ref="$$ref" || true; \
+	  read -p "release_tag (blank to skip): " tag; \
+	  [ -n "$$tag" ] || exit 0; \
+	  read -p "commit (blank = the tag's own commit): " commit; \
+	  if [ -n "$$commit" ]; then \
+	    gh workflow run native-libs.yml -f release_tag="$$tag" -f commit="$$commit"; \
+	  else \
+	    gh workflow run native-libs.yml -f release_tag="$$tag"; \
+	  fi; \
 	} || echo "(install the GitHub CLI 'gh' to trigger it from here)"
 
 # Re-vendor the golden-vector fixtures from the monorepo (single source of truth).

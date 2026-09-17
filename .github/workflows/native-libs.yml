@@ -19,6 +19,12 @@ on:
         description: tari-ootle repository (owner/name)
         required: false
         default: tari-project/tari-ootle
+      commit:
+        description: >-
+          Commit whose build to vendor, when the tag carries assets from more than one
+          (blank = the commit the tag itself points at)
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -55,13 +61,15 @@ jobs:
       - name: Vendor lib from release asset
         env:
           GH_TOKEN: ${{ secrets.MONOREPO_TOKEN || github.token }}
+          COMMIT: ${{ inputs.commit }}
         run: |
           ./scripts/vendor_release.sh \
             --tari-platform "${{ matrix.tari_platform }}" \
             --goos "${{ matrix.goos }}" \
             --goarch "${{ matrix.goarch }}" \
             --tag "${{ inputs.release_tag }}" \
-            --repo "${{ inputs.monorepo_repo }}"
+            --repo "${{ inputs.monorepo_repo }}" \
+            ${COMMIT:+--commit "$COMMIT"}
 
       - name: Verify (build + golden vectors)
         run: |
