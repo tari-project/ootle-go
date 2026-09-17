@@ -16,10 +16,15 @@
 #   vendor_release.sh --tari-platform macos-arm64 --goos darwin --goarch arm64 \
 #                     --tag v0.1.0 --repo tari-project/tari-ootle
 #
+# A tag can carry more than one build of the same version (the asset name embeds the short
+# commit: ootle_sdk_ffi_c-<version>-<short-sha>-<platform>.zip), e.g. when the release line
+# is re-cut before the tag is published. The commit the tag itself points at is the one
+# vendored; override with --commit <sha> to pin a different build.
+#
 set -euo pipefail
 
 CRATE="ootle_sdk_ffi_c"
-TARI_PLATFORM="" GOOS="" GOARCH="" TAG="" REPO="tari-project/tari-ootle"
+TARI_PLATFORM="" GOOS="" GOARCH="" TAG="" REPO="tari-project/tari-ootle" COMMIT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --goarch)        GOARCH="$2"; shift 2 ;;
     --tag)           TAG="$2"; shift 2 ;;
     --repo)          REPO="$2"; shift 2 ;;
+    --commit)        COMMIT="$2"; shift 2 ;;
     *) echo "error: unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -53,15 +59,27 @@ check_sha() {  # check_sha <sha256-file> (run in the dir holding both files)
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-echo "==> Downloading ${CRATE} ${TARI_PLATFORM} from ${REPO}@${TAG}"
+# Resolve the commit whose build to vendor. A release can hold assets from several commits,
+# so the asset glob is narrowed to one — the tag's own target commit unless --commit pins
+# another. The short sha in the asset name may be longer than the 7 chars matched here, hence
+# the trailing wildcard.
+if [[ -z "${COMMIT}" ]]; then
+  COMMIT="$(gh api "repos/${REPO}/commits/${TAG}" --jq '.sha' 2>/dev/null || true)"
+  [[ -n "${COMMIT}" ]] || { echo "error: could not resolve the commit for ${REPO}@${TAG}; pass --commit" >&2; exit 1; }
+fi
+SHORT_SHA="${COMMIT:0:7}"
+
+echo "==> Downloading ${CRATE} ${TARI_PLATFORM} from ${REPO}@${TAG} (${SHORT_SHA})"
 # The non-musl linux-x86_64 pattern intentionally excludes the *-linux-x86_64-musl.zip asset
 # (different suffix). Includes prereleases/drafts via --pattern on the resolved tag.
 gh release download "${TAG}" --repo "${REPO}" --dir "${WORK}" \
-  --pattern "${CRATE}-*-${TARI_PLATFORM}.zip" \
-  --pattern "${CRATE}-*-${TARI_PLATFORM}.zip.sha256"
+  --pattern "${CRATE}-*-${SHORT_SHA}*-${TARI_PLATFORM}.zip" \
+  --pattern "${CRATE}-*-${SHORT_SHA}*-${TARI_PLATFORM}.zip.sha256"
 
-ZIP="$(ls "${WORK}"/${CRATE}-*-${TARI_PLATFORM}.zip)"
-[[ -f "${ZIP}" ]] || { echo "error: asset not found for ${TARI_PLATFORM}" >&2; exit 1; }
+mapfile -t ZIPS < <(ls "${WORK}"/${CRATE}-*-${TARI_PLATFORM}.zip 2>/dev/null)
+(( ${#ZIPS[@]} > 0 )) || { echo "error: no ${TARI_PLATFORM} asset for ${SHORT_SHA} in ${REPO}@${TAG}" >&2; exit 1; }
+(( ${#ZIPS[@]} == 1 )) || { echo "error: ${#ZIPS[@]} ${TARI_PLATFORM} assets matched ${SHORT_SHA}: ${ZIPS[*]}" >&2; exit 1; }
+ZIP="${ZIPS[0]}"
 BASE="$(basename "${ZIP}")"
 
 echo "==> Verifying checksum"
@@ -88,7 +106,8 @@ echo "==> Vendoring staticlib -> ${LIB_DEST}"
 cp "${LIB_SRC}" "${LIB_DEST}"
 
 # Asset name is ootle_sdk_ffi_c-<version>-<short-sha>-<platform>.zip. Recover version + the
-# monorepo short commit from it (platform may contain hyphens, so peel from both ends).
+# monorepo short commit as the asset spells it (platform may contain hyphens, so peel from
+# both ends).
 MIDDLE="${BASE#${CRATE}-}"; MIDDLE="${MIDDLE%-${TARI_PLATFORM}.zip}"
 CRATE_VERSION="${MIDDLE%-*}"
 SHORT_SHA="${MIDDLE##*-}"
