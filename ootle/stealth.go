@@ -380,7 +380,7 @@ func (c *Client) sendStealthTransfer(ctx context.Context, network Network, inten
 		// ApplyFetchedSubstatesStealth consumes `handle` (even on error) and returns the next
 		// handle to thread forward. Re-point `handle` immediately so the deferred guard frees the
 		// right one.
-		next, resolutionJSON, aErr := cffi.ApplyFetchedSubstatesStealth(handle, netByte, string(fetchedJSON), secrets)
+		next, resolutionJSON, aErr := cffi.ApplyFetchedSubstatesStealth(handle, netByte, string(fetchedJSON), secrets, keysJSON)
 		handle = next // nil on error; the new handle on success
 		if aErr != nil {
 			return FinalizedResult{}, fromCffiError(aErr)

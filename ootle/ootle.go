@@ -74,11 +74,43 @@ func fromCffiError(err error) error {
 	return &Error{Code: "INTERNAL", Message: err.Error()}
 }
 
-// InputRef is one explicit input: a canonical substate id plus an optional version.
-// Mirrors the core's InputRef (a nil version is unversioned).
+// InputRef is one explicit input: a canonical substate id, an optional version, and whether the
+// transaction writes it. Mirrors the core's InputRef (a nil version is unversioned).
 type InputRef struct {
 	SubstateID string  `json:"substate_id"`
-	Version    *uint32 `json:"version"`
+	Version    *uint64 `json:"version"`
+	// ReadOnly declares the input read-only (the core's is_write = false): the transaction only
+	// reads it, so it is locked for read and may run alongside other readers. The zero value is a
+	// write, the core's default. Merged with a write of the same substate, the input is a write.
+	ReadOnly bool `json:"-"`
+}
+
+// inputRefWire is InputRef's on-wire shape (the core's is_write, inverted so the Go zero value is
+// the core's default).
+type inputRefWire struct {
+	SubstateID string  `json:"substate_id"`
+	Version    *uint64 `json:"version"`
+	IsWrite    *bool   `json:"is_write,omitempty"`
+}
+
+// MarshalJSON emits the core's InputRef shape.
+func (r InputRef) MarshalJSON() ([]byte, error) {
+	w := inputRefWire{SubstateID: r.SubstateID, Version: r.Version}
+	if r.ReadOnly {
+		isWrite := false
+		w.IsWrite = &isWrite
+	}
+	return json.Marshal(w)
+}
+
+// UnmarshalJSON decodes the core's InputRef shape (an absent is_write is a write).
+func (r *InputRef) UnmarshalJSON(data []byte) error {
+	var w inputRefWire
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	*r = InputRef{SubstateID: w.SubstateID, Version: w.Version, ReadOnly: w.IsWrite != nil && !*w.IsWrite}
+	return nil
 }
 
 // TransferRecipient is the tagged recipient of a public transfer: exactly one of a

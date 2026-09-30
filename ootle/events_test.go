@@ -64,12 +64,12 @@ func recvEvent(t *testing.T, out <-chan Event, errs <-chan error) Event {
 	return Event{}
 }
 
-const fullBody = `{"transaction_id":"abc123","event":{"substate_id":"component_deadbeef","template_address":"tmpl_001","payload":{"amount":"100","to":"acct_x"}}}`
+const fullBody = `{"transaction_id":"abc123","event":{"substate_id":"component_deadbeef","template_address":"tmpl_001","payload":{"amount":100,"to":"acct_x"}}}`
 
 // --- tests -----------------------------------------------------------------------------
 
 // TestWatchEventsTypedMapping covers happy-path typed decode: topic from event:, id parsed
-// to int64, body fields, and the flat map[string]string payload.
+// to int64, body fields, and the flat key→raw-JSON payload.
 func TestWatchEventsTypedMapping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeSSEFrame(t, w, "std.vault.withdraw", "4271", fullBody)
@@ -97,13 +97,13 @@ func TestWatchEventsTypedMapping(t *testing.T) {
 	if ev.TemplateAddress != "tmpl_001" {
 		t.Errorf("TemplateAddress = %q, want tmpl_001", ev.TemplateAddress)
 	}
-	want := map[string]string{"amount": "100", "to": "acct_x"}
+	want := map[string]string{"amount": `100`, "to": `"acct_x"`}
 	if len(ev.Payload) != len(want) {
 		t.Fatalf("Payload = %v, want %v", ev.Payload, want)
 	}
 	for k, v := range want {
-		if ev.Payload[k] != v {
-			t.Errorf("Payload[%q] = %q, want %q", k, ev.Payload[k], v)
+		if string(ev.Payload[k]) != v {
+			t.Errorf("Payload[%q] = %s, want %s", k, ev.Payload[k], v)
 		}
 	}
 }
@@ -125,8 +125,8 @@ func TestWatchEventsSubstateIDNull(t *testing.T) {
 	if ev.SubstateID != "" {
 		t.Errorf("SubstateID = %q, want empty string for null", ev.SubstateID)
 	}
-	if ev.Payload["k"] != "v" {
-		t.Errorf("Payload[k] = %q, want v", ev.Payload["k"])
+	if string(ev.Payload["k"]) != `"v"` {
+		t.Errorf("Payload[k] = %s, want \"v\"", ev.Payload["k"])
 	}
 }
 

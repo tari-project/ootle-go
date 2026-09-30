@@ -864,6 +864,24 @@ func runParse(t *testing.T, fx goldenFixture) {
 		wj, _ := json.MarshalIndent(want, "", "  ")
 		t.Errorf("fixture %q: parsed FinalizedResult mismatch:\n got:  %s\n want: %s", fx.Name, gj, wj)
 	}
+
+	// The Go types must carry every field the core emits: decode strictly into FinalizedResult and
+	// re-marshal, so a field added (or retyped) in the core fails here rather than being dropped.
+	dec := json.NewDecoder(strings.NewReader(parsedJSON))
+	dec.DisallowUnknownFields()
+	var typed FinalizedResult
+	if err := dec.Decode(&typed); err != nil {
+		t.Fatalf("fixture %q: strict decode into FinalizedResult: %v", fx.Name, err)
+	}
+	remarshalled, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatalf("fixture %q: re-marshal FinalizedResult: %v", fx.Name, err)
+	}
+	if rt := canonicalizeJSON(t, remarshalled); !reflect.DeepEqual(rt, want) {
+		rj, _ := json.MarshalIndent(rt, "", "  ")
+		wj, _ := json.MarshalIndent(want, "", "  ")
+		t.Errorf("fixture %q: FinalizedResult Go round-trip mismatch:\n got:  %s\n want: %s", fx.Name, rj, wj)
+	}
 }
 
 // scanGoldenInput is the per-arm view of a scan_stealth_output fixture's stealth_scan_input
@@ -1035,7 +1053,7 @@ func runStealthOutputsStatement(t *testing.T, fx goldenFixture) {
 	}
 
 	// Drive the standalone core entry point straight through the cgo seam.
-	dataJSON, cerr := cffi.BuildStealthOutputsStatementWithSeed(netByte, string(fx.Input.StealthIntent), fx.Input.StealthSeed)
+	dataJSON, cerr := cffi.BuildStealthOutputsStatementWithSeed(netByte, string(fx.Input.StealthIntent), fx.Input.StealthSeed, "")
 	if cerr != nil {
 		t.Fatalf("fixture %q: BuildStealthOutputsStatementWithSeed over C ABI failed: %v", fx.Name, cerr)
 	}

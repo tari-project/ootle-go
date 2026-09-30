@@ -30,7 +30,7 @@ type ArgValue struct {
 	u64           *uint64
 	bytes         []byte // non-nil (incl. empty) ⇒ a Bytes arg
 	bytesSet      bool
-	metadata      map[string]string // non-nil ⇒ a Metadata arg
+	metadata      map[string]ArgValue // non-nil ⇒ a Metadata arg
 	i64           *int64
 	nonFungibleID *string
 	list          []ArgValue // a List arg; see listSet for the empty case
@@ -74,13 +74,26 @@ func ArgBytes(b []byte) ArgValue {
 }
 
 // ArgMetadata is a string→string metadata map, encoded by the core as the engine Metadata
-// (a CBOR-tagged map). Templates taking a Metadata parameter (resource builders,
-// stable_coin::instantiate) expect this. A nil map encodes as an empty Metadata.
+// (a CBOR-tagged map) with each value a CBOR text string. Templates taking a Metadata parameter
+// (resource builders, stable_coin::instantiate) expect this. A nil map encodes as an empty
+// Metadata. Use ArgMetadataValues for non-string values.
 func ArgMetadata(m map[string]string) ArgValue {
-	if m == nil {
-		m = map[string]string{}
+	values := make(map[string]ArgValue, len(m))
+	for k, v := range m {
+		values[k] = ArgString(v)
 	}
-	return ArgValue{metadata: m}
+	return ArgValue{metadata: values}
+}
+
+// ArgMetadataValues is a metadata map with typed values, each lowered as a list element would be
+// (e.g. ArgAmount for an amount, ArgString for text). A nested ArgWorkspace is a "VALIDATION" error
+// at build time. A nil map encodes as an empty Metadata.
+func ArgMetadataValues(m map[string]ArgValue) ArgValue {
+	values := make(map[string]ArgValue, len(m))
+	for k, v := range m {
+		values[k] = v
+	}
+	return ArgValue{metadata: values}
 }
 
 // ArgNonFungibleID is a non-fungible id value in canonical string form: "uuid_<64-hex>", "str_<text>",
@@ -142,7 +155,7 @@ func (a ArgValue) MarshalJSON() ([]byte, error) {
 	case a.bytesSet:
 		return json.Marshal(map[string]string{"Bytes": hex.EncodeToString(a.bytes)})
 	case a.metadata != nil:
-		return json.Marshal(map[string]map[string]string{"Metadata": a.metadata})
+		return json.Marshal(map[string]map[string]ArgValue{"Metadata": a.metadata})
 	default:
 		return nil, errors.New("ootle: ArgValue has no variant set (use an Arg* constructor)")
 	}

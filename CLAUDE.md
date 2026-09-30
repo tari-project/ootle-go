@@ -104,7 +104,7 @@ proof are **not** byte-stable — so stealth send vectors compare **semantically
   `ootle.ErrResolutionDidNotConverge` via `errors.Is`.
 - A finalized **reject is not an error** — it's a populated `FinalizedResult` whose
   `Submit.Outcome` is `Reject`/`OnlyFeeCommit` with a `RejectReason{Code, AbortCode,
-  Message}`. Branch on `AbortCode`, never parse `Message`.
+  FailureCode, Message}`. Branch on `AbortCode` / `FailureCode`, never parse `Message`.
 
 ## Golden vectors & drift
 

@@ -55,7 +55,7 @@ const DefaultTimeout = 30 * time.Second
 // FetchedSubstate is the boundary record the core's apply_fetched_substates consumes.
 // It mirrors crates/ootle_sdk_core/src/inputs.rs::FetchedSubstate exactly:
 //
-//	{ "substate_id": <id>, "version": <u32>, "substate_value": <SubstateValue JSON> }
+//	{ "substate_id": <id>, "version": <u64>, "substate_value": <SubstateValue JSON> }
 //
 // SubstateValue is carried verbatim as json.RawMessage — the transport never decodes
 // it; the core parses it into the internal SubstateValue (a malformed value ⇒ the
@@ -64,7 +64,7 @@ const DefaultTimeout = 30 * time.Second
 // substate_id) and nothing more.
 type FetchedSubstate struct {
 	SubstateID    string          `json:"substate_id"`
-	Version       uint32          `json:"version"`
+	Version       uint64          `json:"version"`
 	SubstateValue json.RawMessage `json:"substate_value"`
 }
 
@@ -204,7 +204,7 @@ type fetchRequest struct {
 // GET /substates/{id}): { "version", "substate" }. `substate` is the SubstateValue JSON,
 // carried verbatim.
 type indexerSubstate struct {
-	Version  uint32          `json:"version"`
+	Version  uint64          `json:"version"`
 	Substate json.RawMessage `json:"substate"`
 }
 

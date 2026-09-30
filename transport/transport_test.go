@@ -39,7 +39,7 @@ func TestFetchSubstatesRoundTrip(t *testing.T) {
 		// Echo a substate back for each requested id.
 		subs := map[string]indexerSubstate{}
 		for i, id := range gotReq.Requests {
-			subs[id] = indexerSubstate{Version: uint32(i), Substate: json.RawMessage(`{"Vault":{"id":"` + id + `"}}`)}
+			subs[id] = indexerSubstate{Version: uint64(i), Substate: json.RawMessage(`{"Vault":{"id":"` + id + `"}}`)}
 		}
 		writeJSON(t, w, fetchResponse{Substates: subs})
 	}))
