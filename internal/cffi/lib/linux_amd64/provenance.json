@@ -2,14 +2,14 @@
   "platform": "linux_amd64",
   "source": "release-asset",
   "monorepo_remote": "https://github.com/tari-project/tari-ootle",
-  "monorepo_commit": "a43773e",
-  "release_tag": "v0.42.0",
-  "asset": "ootle_sdk_ffi_c-0.42.0-a43773e-linux-x86_64.zip",
-  "crate_version": "0.42.0",
-  "abi": "ootle-sdk-ffi-c/16",
+  "monorepo_commit": "392d805",
+  "release_tag": "v0.43.0",
+  "asset": "ootle_sdk_ffi_c-0.43.0-392d805-linux-x86_64.zip",
+  "crate_version": "0.43.0",
+  "abi": "ootle-sdk-ffi-c/17",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
   "native_static_libs": "-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc",
-  "size_bytes": 55601634,
-  "sha256": "a32866ae37d19e1b801501fedb9c15a1fd6119190f264b551ff6b947b44cfd39"
+  "size_bytes": 55641876,
+  "sha256": "20cf5097ddd47900fe3876e08f632e5a666a654d5047a8b725df0249526aa484"
 }

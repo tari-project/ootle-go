@@ -38,7 +38,7 @@ import (
 // ExpectedABIVersion is the frozen ABI tag the vendored lib must report. A mismatch
 // means the vendored lib drifted from this wrapper — fail loudly rather than
 // mis-marshal. Keep in sync with `ootle_abi_version()` in ootle_sdk.h.
-const ExpectedABIVersion = "ootle-sdk-ffi-c/16"
+const ExpectedABIVersion = "ootle-sdk-ffi-c/17"
 
 var (
 	abiOnce sync.Once
