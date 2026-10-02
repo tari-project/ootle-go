@@ -143,12 +143,17 @@ func (o TransactionOutcome) MarshalJSON() ([]byte, error) {
 }
 
 // RejectReason is a boundary reject reason: a stable Code plus the rendered Message,
-// with an optional canonical AbortCode (e.g. "EPOCH_EXPIRED") when this is an abort.
+// with an optional canonical AbortCode (e.g. "EPOCH_EXPIRED") when this is an abort, or an
+// optional canonical FailureCode (e.g. "ACCESS_DENIED") when this is an execution failure.
 type RejectReason struct {
 	// Code is the stable variant code, e.g. "EXECUTION_FAILURE".
 	Code string `json:"code"`
 	// AbortCode is the canonical AbortReason sub-code when this is an abort; else empty.
 	AbortCode string `json:"abort_code,omitempty"`
+	// FailureCode is the canonical ExecutionFailureCode sub-code (e.g. "ACCESS_DENIED",
+	// "INSUFFICIENT_FUNDS", "UNCLASSIFIED") when Code is "EXECUTION_FAILURE"; else empty. The
+	// set is the core's and can grow with a core version — treat an unknown code as unclassified.
+	FailureCode string `json:"failure_code,omitempty"`
 	// Message is the human-readable detail.
 	Message string `json:"message"`
 }
@@ -170,7 +175,8 @@ type FeeReceipt struct {
 type FeeCost struct {
 	// Source is the FeeSource name (e.g. "Initial", "Storage"). The set of names is the
 	// core's, not this module's, and can change with a core version — 0.41.0 dropped
-	// "SignatureVerification" and "ExhaustBurn" and added "Reserved". Treat an unknown
+	// "SignatureVerification" and "ExhaustBurn" and added "Reserved"; 0.42.0 dropped
+	// "Reserved" again. Treat an unknown
 	// name as a cost you do not recognise rather than assuming the set is closed.
 	Source string
 	// Amount is the cost charged from that source, in µTari.
@@ -202,7 +208,7 @@ type UpSubstate struct {
 	// SubstateID is the substate id (canonical string form).
 	SubstateID string `json:"substate_id"`
 	// Version is the created version.
-	Version uint32 `json:"version"`
+	Version uint64 `json:"version"`
 }
 
 // DownSubstate is one destroyed (down) substate: id + version. The core emits it as a
@@ -211,7 +217,7 @@ type DownSubstate struct {
 	// SubstateID is the destroyed substate id.
 	SubstateID string
 	// Version is the destroyed version.
-	Version uint32
+	Version uint64
 }
 
 // UnmarshalJSON decodes the core's [id, version] tuple form.
@@ -299,29 +305,47 @@ func containsString(xs []string, want string) bool {
 type EventPayload struct {
 	// Key is the payload entry key.
 	Key string
-	// Value is the payload entry value.
-	Value string
+	// Value is the payload entry value as raw JSON. Payload values are arbitrary CBOR since core
+	// 0.42.0, rendered to JSON by the core (tari_bor's value_serde): text is a JSON string, an
+	// integer within i64/u64 a JSON number (kept raw so it never passes through a float64), and
+	// anything without a natural JSON shape is an "@cbor" sentinel object:
+	//
+	//	{"@cbor":"tag","tag":N,"value":…}       a tagged value, e.g. a typed address in std.* events
+	//	{"@cbor":"int","value":"<decimal>"}     an integer outside i64/u64, e.g. a u128 Amount
+	//	{"@cbor":"bytes","hex":"<hex>"}         a byte string
+	//	{"@cbor":"map","entries":[[k,v],…]}     a map with non-text keys
+	//	{"@cbor":"raw","hex":"<hex>"}           CBOR the core could not render (finalized results only)
+	//
+	// Unmarshal it into the shape you expect for that key; do not assume a string.
+	Value json.RawMessage
 }
 
 // UnmarshalJSON decodes the core's [key, value] tuple form.
 func (p *EventPayload) UnmarshalJSON(data []byte) error {
-	var tuple []string
+	var tuple []json.RawMessage
 	if err := json.Unmarshal(data, &tuple); err != nil {
 		return err
 	}
 	if len(tuple) != 2 {
 		return errors.New("ootle: EventPayload must be a 2-element [key, value] array")
 	}
-	p.Key, p.Value = tuple[0], tuple[1]
+	if err := json.Unmarshal(tuple[0], &p.Key); err != nil {
+		return err
+	}
+	p.Value = tuple[1]
 	return nil
 }
 
 // MarshalJSON re-emits the [key, value] tuple form.
 func (p EventPayload) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]string{p.Key, p.Value})
+	value := p.Value
+	if value == nil {
+		value = json.RawMessage("null")
+	}
+	return json.Marshal([]any{p.Key, value})
 }
 
-// EventSummary is a boundary event summary — engine Event flattened to strings.
+// EventSummary is a boundary event summary — engine Event with its payload values as raw JSON.
 type EventSummary struct {
 	// SubstateID is the emitting substate id, if any.
 	SubstateID string `json:"substate_id,omitempty"`

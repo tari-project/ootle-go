@@ -38,7 +38,7 @@ import (
 // ExpectedABIVersion is the frozen ABI tag the vendored lib must report. A mismatch
 // means the vendored lib drifted from this wrapper — fail loudly rather than
 // mis-marshal. Keep in sync with `ootle_abi_version()` in ootle_sdk.h.
-const ExpectedABIVersion = "ootle-sdk-ffi-c/16"
+const ExpectedABIVersion = "ootle-sdk-ffi-c/17"
 
 var (
 	abiOnce sync.Once
@@ -553,9 +553,10 @@ func BuildStealthUnsignedWithSeed(networkByte uint8, intentJSON, seedHex string)
 // to thread forward plus the resolution data JSON ({"status":"resolved"} or
 // {"status":"need_more","fetch_ids":[…]}). networkByte must be the transfer's network (the handle
 // does not carry it). fetchedJSON is a JSON array of FetchedSubstate; spendSecretsJSON a JSON array of
-// hex scalars (positional per intent.inputs). The input StealthHandle is invalidated regardless of
-// outcome — callers must not reuse or free it.
-func ApplyFetchedSubstatesStealth(h *StealthHandle, networkByte uint8, fetchedJSON, spendSecretsJSON string) (*StealthHandle, string, error) {
+// hex scalars (positional per intent.inputs); keysJSON is {account_secret} — the key that will seal,
+// which assembly names as the revealed output's receiver. The input StealthHandle is invalidated
+// regardless of outcome — callers must not reuse or free it.
+func ApplyFetchedSubstatesStealth(h *StealthHandle, networkByte uint8, fetchedJSON, spendSecretsJSON, keysJSON string) (*StealthHandle, string, error) {
 	if err := ensureABI(); err != nil {
 		return nil, "", err
 	}
@@ -566,10 +567,12 @@ func ApplyFetchedSubstatesStealth(h *StealthHandle, networkByte uint8, fetchedJS
 	defer C.free(unsafe.Pointer(cFetched))
 	cSecrets := C.CString(spendSecretsJSON)
 	defer C.free(unsafe.Pointer(cSecrets))
+	cKeys := C.CString(keysJSON)
+	defer C.free(unsafe.Pointer(cKeys))
 
 	ptr := h.ptr
 	h.ptr = nil // the C call consumes it; invalidate our copy first to prevent double-free.
-	env := consume(C.ootle_apply_fetched_substates_stealth(ptr, C.uint8_t(networkByte), cFetched, cSecrets))
+	env := consume(C.ootle_apply_fetched_substates_stealth(ptr, C.uint8_t(networkByte), cFetched, cSecrets, cKeys))
 	if !env.ok {
 		return nil, "", env.asError()
 	}
@@ -704,13 +707,15 @@ func ValidateStealthTransfer(networkByte uint8, sealedHex string) (string, error
 // BuildStealthOutputsStatementWithSeed wraps ootle_build_stealth_outputs_statement_with_seed — the
 // standalone seed-reproducible outputs-statement builder, in the core. intentJSON is a
 // StealthTransferIntent carrying the outputs; seedHex is the lowercase-hex 32-byte build seed that
-// pins every output's mask/nonces. On success it returns the data JSON, a JSON object
+// pins every output's mask/nonces; revealedReceiverHex is the lowercase-hex public key authorised to
+// take the intent's revealed output, and may be empty (passed as null) only when the intent reveals
+// nothing. On success it returns the data JSON, a JSON object
 // {"outputs_statement": {...}, "aggregated_output_mask": "<64-hex>"}. The statement's byte-unstable
 // agg_range_proof is nulled (semantic); the aggregated_output_mask is byte-stable.
 //
 // Malformed intent JSON / bad seed hex is "PARSE"; an invalid intent is "VALIDATION"; a null arg /
 // unknown network is "INVALID". Stateless — no handle is involved.
-func BuildStealthOutputsStatementWithSeed(networkByte uint8, intentJSON, seedHex string) (string, error) {
+func BuildStealthOutputsStatementWithSeed(networkByte uint8, intentJSON, seedHex, revealedReceiverHex string) (string, error) {
 	if err := ensureABI(); err != nil {
 		return "", err
 	}
@@ -718,8 +723,13 @@ func BuildStealthOutputsStatementWithSeed(networkByte uint8, intentJSON, seedHex
 	defer C.free(unsafe.Pointer(cIntent))
 	cSeed := C.CString(seedHex)
 	defer C.free(unsafe.Pointer(cSeed))
+	var cReceiver *C.char
+	if revealedReceiverHex != "" {
+		cReceiver = C.CString(revealedReceiverHex)
+		defer C.free(unsafe.Pointer(cReceiver))
+	}
 
-	env := consume(C.ootle_build_stealth_outputs_statement_with_seed(C.uint8_t(networkByte), cIntent, cSeed))
+	env := consume(C.ootle_build_stealth_outputs_statement_with_seed(C.uint8_t(networkByte), cIntent, cSeed, cReceiver))
 	if !env.ok {
 		return "", env.asError()
 	}

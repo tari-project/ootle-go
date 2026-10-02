@@ -128,7 +128,7 @@ func seedStealthAccount(index map[string]transport.FetchedSubstate) {
 // (a) ABI version guard — fails immediately if a stale lib is linked or ExpectedABIVersion does
 // not match the version exposing the current entry-point set (the seed-based, random-default ABI).
 func TestStealthABIVersionIsCurrent(t *testing.T) {
-	const want = "ootle-sdk-ffi-c/16"
+	const want = "ootle-sdk-ffi-c/17"
 	if got := cffi.ABIVersion(); got != want {
 		t.Fatalf("ABI version = %q, want %s (rebuild via make native)", got, want)
 	}

@@ -2,8 +2,8 @@
   "name": "parse_finalized_result/accept_fee_reject_rest",
   "schema_version": 1,
   "provenance": {
-    "core_version": "0.39.0",
-    "git_rev": "9f4833febee5c633a6fb2f0bd61dd1ce6d33c481",
+    "core_version": "0.41.2",
+    "git_rev": "f1de8633ae83fa2801be7c31c8a53a46cc0cb921",
     "generated_by": "ootle_sdk_core golden-vector generator"
   },
   "operation": "parse_finalized_result",
@@ -36,6 +36,7 @@
                   "Storage": 9007199254740999
                 }
               },
+              "exhaust_burn": 0,
               "total_fee_overcharge": 0,
               "total_fee_payment": 9007199254742992,
               "total_fees_paid": 9007199254742492
@@ -91,12 +92,17 @@
                   ]
                 },
                 {
-                  "ExecutionFailure": "main intent failed"
+                  "ExecutionFailure": {
+                    "code": "Unclassified",
+                    "message": "main intent failed"
+                  }
                 }
               ]
             },
+            "total_fees_required": 9007199254741999,
             "transaction_hash": "5151515151515151515151515151515151515151515151515151515151515151"
           },
+          "native_execution_points": 0,
           "wasm_execution_points": 0
         },
         "execution_time": {
@@ -163,7 +169,8 @@
         "outcome": {
           "OnlyFeeCommit": {
             "code": "EXECUTION_FAILURE",
-            "message": "Execution failure: main intent failed"
+            "failure_code": "UNCLASSIFIED",
+            "message": "Execution failure (Unclassified): main intent failed"
           }
         },
         "transaction_id": "5151515151515151515151515151515151515151515151515151515151515151"

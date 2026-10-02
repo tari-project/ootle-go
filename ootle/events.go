@@ -3,7 +3,7 @@
 //
 // Each raw SSE frame from transport.StreamTransactionEvents is decoded into a typed Event,
 // and a reconnect-with-Last-Event-ID loop with backoff is layered on top. Decoding is plain
-// JSON; the streamed Event's flat string→string payload is distinct from result.go's
+// JSON; the streamed Event's flat key→JSON-value payload is distinct from result.go's
 // EventSummary/EventPayload (the finalized-result [key,value] tuple shape).
 
 package ootle
@@ -43,7 +43,7 @@ type EventFilter struct {
 
 // Event is one decoded transaction event delivered by WatchEvents. It is distinct from
 // result.go's EventSummary (the finalized-result shape): the streamed payload is a flat
-// string→string map, not a [key,value] tuple list.
+// key→JSON-value map, not a [key,value] tuple list.
 type Event struct {
 	// ID is the DB event id (the SSE id: field parsed to int64), the resume cursor's value.
 	// It is 0 for the rare live frame that carries no id:.
@@ -57,9 +57,12 @@ type Event struct {
 	SubstateID string
 	// TemplateAddress is the address of the template that emitted the event.
 	TemplateAddress string
-	// Payload is the event payload as a flat string→string map. It is nil when the wire
-	// payload was absent or null.
-	Payload map[string]string
+	// Payload is the event payload as a flat key→raw-JSON map. Payload values are arbitrary
+	// CBOR since core 0.42.0, rendered to JSON by the indexer in the same forms as
+	// EventPayload.Value (strings, numbers, and "@cbor" sentinel objects such as a typed address
+	// or a u128 amount) — do not assume a string. It is nil when the wire payload was absent or
+	// null.
+	Payload map[string]json.RawMessage
 }
 
 // sseTxEvent mirrors the indexer's data: body for /transactions/events/stream. The topic
@@ -67,9 +70,9 @@ type Event struct {
 type sseTxEvent struct {
 	TransactionID string `json:"transaction_id"`
 	Event         struct {
-		SubstateID      *string           `json:"substate_id"` // nullable
-		TemplateAddress string            `json:"template_address"`
-		Payload         map[string]string `json:"payload"`
+		SubstateID      *string                    `json:"substate_id"` // nullable
+		TemplateAddress string                     `json:"template_address"`
+		Payload         map[string]json.RawMessage `json:"payload"`
 	} `json:"event"`
 }
 

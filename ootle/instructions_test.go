@@ -401,7 +401,7 @@ func TestBuildUnsignedInstructionsBadIntentIsParseError(t *testing.T) {
 // would short-circuit the core's explicit path) with a VALIDATION error — mirroring SendPublicTransfer.
 func TestSendInstructionsRejectsExplicitInputs(t *testing.T) {
 	c := NewClient(&mockTransport{}, WithNetwork(NetworkEsmeralda))
-	version := uint32(0)
+	version := uint64(0)
 	intent := GenericTransactionIntent{
 		Fee:          2000,
 		FeePayment:   FeeFromAccount("component_71"),
@@ -415,5 +415,147 @@ func TestSendInstructionsRejectsExplicitInputs(t *testing.T) {
 	var oe *Error
 	if !errors.As(err, &oe) || oe.Code != "VALIDATION" {
 		t.Fatalf("expected a VALIDATION *Error, got %v", err)
+	}
+}
+
+// TestArgMetadataWireShape pins ArgMetadata to the core's Metadata(map<String, ArgValue>) shape
+// (core 0.42.0+): each string value is a tagged {"String": …} ArgValue, matching the vendored
+// arg_dsl/metadata vector's input.
+func TestArgMetadataWireShape(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "fixtures", "arg_dsl", "metadata.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var fx struct {
+		Input struct {
+			ArgValue json.RawMessage `json:"arg_value"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(raw, &fx); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	got, err := json.Marshal(ArgMetadata(map[string]string{"provider_name": "OotleExample", "website": "example.test"}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if g, w := canonicalizeJSON(t, got), canonicalizeJSON(t, fx.Input.ArgValue); !reflect.DeepEqual(g, w) {
+		t.Errorf("ArgMetadata = %s, want %s", got, fx.Input.ArgValue)
+	}
+
+	typed, err := json.Marshal(ArgMetadataValues(map[string]ArgValue{"supply": ArgAmount(100)}))
+	if err != nil {
+		t.Fatalf("marshal typed: %v", err)
+	}
+	if want := `{"Metadata":{"supply":{"Amount":100}}}`; string(typed) != want {
+		t.Errorf("ArgMetadataValues = %s, want %s", typed, want)
+	}
+	empty, _ := json.Marshal(ArgMetadata(nil))
+	if want := `{"Metadata":{}}`; string(empty) != want {
+		t.Errorf("ArgMetadata(nil) = %s, want %s", empty, want)
+	}
+}
+
+// TestInputRefReadOnlyWire covers the core's is_write flag: a write (the zero value) omits it so
+// the core applies its write default; ReadOnly emits is_write:false; decode inverts both.
+func TestInputRefReadOnlyWire(t *testing.T) {
+	v := uint64(1) << 40
+	cases := []struct {
+		ref  InputRef
+		wire string
+	}{
+		{InputRef{SubstateID: "component_71"}, `{"substate_id":"component_71","version":null}`},
+		{InputRef{SubstateID: "resource_01", Version: &v, ReadOnly: true}, `{"substate_id":"resource_01","version":1099511627776,"is_write":false}`},
+	}
+	for _, tc := range cases {
+		got, err := json.Marshal(tc.ref)
+		if err != nil {
+			t.Fatalf("marshal %+v: %v", tc.ref, err)
+		}
+		if string(got) != tc.wire {
+			t.Errorf("marshal %+v = %s, want %s", tc.ref, got, tc.wire)
+		}
+		var back InputRef
+		if err := json.Unmarshal(got, &back); err != nil {
+			t.Fatalf("unmarshal %s: %v", got, err)
+		}
+		if !reflect.DeepEqual(back, tc.ref) {
+			t.Errorf("round-trip %s = %+v, want %+v", got, back, tc.ref)
+		}
+	}
+	var explicitWrite InputRef
+	if err := json.Unmarshal([]byte(`{"substate_id":"x","version":null,"is_write":true}`), &explicitWrite); err != nil || explicitWrite.ReadOnly {
+		t.Errorf("is_write:true decoded as %+v (err %v), want a write", explicitWrite, err)
+	}
+}
+
+// TestCoreAcceptsTypedMetadataAndReadOnlyInput proves the core (not just the Go marshaller) accepts a
+// typed Metadata arg, and that a ReadOnly extra input reaches the resolved transaction as a read
+// (is_write:false) while the core's own resolved inputs stay writes.
+func TestCoreAcceptsTypedMetadataAndReadOnlyInput(t *testing.T) {
+	fx := loadGenericFixture(t, "generic_build/call_method_transfer.json")
+	netByte, ok := fx.Input.Network.ByteValue()
+	if !ok {
+		t.Fatalf("unknown network %q", fx.Input.Network)
+	}
+	fetchedJSON, err := json.Marshal(fx.Input.Fetched)
+	if err != nil {
+		t.Fatalf("marshal fetched: %v", err)
+	}
+
+	account := "component_" + strings.Repeat("71", 32)
+	readOnly := "resource_" + strings.Repeat("01", 32)
+	intent := NewTransaction().
+		PayFeeFromAccount(account, 2000).
+		CallFunction("template_"+strings.Repeat("01", 32), "instantiate",
+			ArgMetadataValues(map[string]ArgValue{"supply": ArgAmount(100), "name": ArgString("x")})).
+		ExtraInput(InputRef{SubstateID: readOnly, ReadOnly: true}).
+		MaxEpoch(10).
+		Intent()
+	// Pin the fee account as an explicit input (as the fixture does), so resolution takes the
+	// explicit path and the fixture's fetched set suffices.
+	version := uint64(0)
+	intent.Inputs = []InputRef{{SubstateID: account, Version: &version}}
+	intentJSON, err := intent.marshalIntent()
+	if err != nil {
+		t.Fatalf("marshal intent: %v", err)
+	}
+	handle, _, err := cffi.BuildUnsignedInstructions(netByte, string(intentJSON))
+	if err != nil {
+		t.Fatalf("core rejected intent %s: %v", intentJSON, err)
+	}
+	defer func() { cffi.FreeHandle(handle) }()
+	next, resJSON, err := cffi.ApplyFetchedSubstates(handle, string(fetchedJSON))
+	handle = next
+	if err != nil {
+		t.Fatalf("ApplyFetchedSubstates: %v", err)
+	}
+	var res resolutionEnvelope
+	if uerr := json.Unmarshal([]byte(resJSON), &res); uerr != nil || res.Status != "resolved" {
+		t.Fatalf("resolution = %s (err %v), want resolved", resJSON, uerr)
+	}
+
+	recordJSON, err := cffi.UnsignedRecordForCosign(handle)
+	if err != nil {
+		t.Fatalf("UnsignedRecordForCosign: %v", err)
+	}
+	var record struct {
+		Unsigned struct {
+			V1 struct {
+				Inputs []InputRef `json:"inputs"`
+			} `json:"V1"`
+		} `json:"unsigned"`
+	}
+	if uerr := json.Unmarshal([]byte(recordJSON), &record); uerr != nil {
+		t.Fatalf("unmarshal unsigned record: %v", uerr)
+	}
+	got := map[string]bool{}
+	for _, in := range record.Unsigned.V1.Inputs {
+		got[in.SubstateID] = in.ReadOnly
+	}
+	if ro, ok := got[readOnly]; !ok || !ro {
+		t.Errorf("inputs %s: %s missing or not read-only", recordJSON, readOnly)
+	}
+	if ro, ok := got[account]; !ok || ro {
+		t.Errorf("inputs %s: fee account %s missing or not a write", recordJSON, account)
 	}
 }

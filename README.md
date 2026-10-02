@@ -202,7 +202,7 @@ the typed error. The codes are part of the public contract — they are never re
 
 A finalized **reject** is not an `Error` — it is a populated `FinalizedResult` whose
 `Submit.Outcome` is `Reject`/`OnlyFeeCommit` carrying a `RejectReason{Code, AbortCode,
-Message}`. Top-level reject codes:
+FailureCode, Message}`. Top-level reject codes:
 
 | `RejectReason.Code` | |
 |---|---|
@@ -213,7 +213,13 @@ When `Code == "ABORT"` (or a foreign-shard abort), `AbortCode` carries the canon
 abort sub-code — one of: `FOREIGN_PLEDGE_INPUT_CONFLICT`, `LOCK_INPUTS_FAILED`,
 `LOCK_OUTPUTS_FAILED`, `LOCK_INPUTS_OUTPUTS_FAILED`, `EXECUTION_FAILURE`,
 `ONE_OR_MORE_INPUTS_NOT_FOUND`, `INSUFFICIENT_FEES_PAID`, `FEE_PAYMENT_IN_MAIN_INTENT`,
-`EPOCH_EXPIRED`, `VALIDITY_WINDOW_TOO_LONG`. Branch on `AbortCode` instead of parsing
+`EPOCH_EXPIRED`, `VALIDITY_WINDOW_TOO_LONG`.
+
+When `Code == "EXECUTION_FAILURE"`, `FailureCode` carries the canonical execution-failure
+sub-code — one of: `TEMPLATE_ERROR`, `ACCESS_DENIED`, `ASSERTION_FAILED`,
+`INSUFFICIENT_FUNDS`, `OUT_OF_COMPUTE`, `LIMIT_EXCEEDED`, `INVALID_ARGUMENT`, `NOT_FOUND`,
+`DANGLING_RESOURCES`, `RESOURCE_RESTRICTED`, `INVALID_PROOF`, `ENGINE_INVARIANT`,
+`NOT_YET_VALID`, `UNCLASSIFIED`. Branch on `AbortCode` / `FailureCode` instead of parsing
 `Message`.
 
 ## Golden vectors & drift
