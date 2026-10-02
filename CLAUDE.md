@@ -46,8 +46,9 @@ a hard error, not a silent mis-marshal.
 Caveat: the tag covers the **C surface**, not the JSON contract carried over it. Core 0.39.0
 made `max_epoch` mandatory without touching the C surface, so the tag stayed at
 `ootle-sdk-ffi-c/16`. Nor is a bump guaranteed even for a C change: core 0.42.0 added
-parameters to two stealth fns still reporting `/16` (fixed by `/17` in 0.43.0). Re-vendor **every** platform together (`make native-all`) — a lib left
-behind at an older core is a silent mis-marshal the ABI check cannot catch.
+parameters to two stealth fns still reporting `/16` (fixed by `/17` in 0.43.0). Re-vendor
+**every** platform together (`make native-all`) — a lib left behind at an older core is a
+silent mis-marshal the ABI check cannot catch.
 
 ## Architecture
 

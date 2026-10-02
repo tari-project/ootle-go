@@ -489,22 +489,73 @@ func TestInputRefReadOnlyWire(t *testing.T) {
 }
 
 // TestCoreAcceptsTypedMetadataAndReadOnlyInput proves the core (not just the Go marshaller) accepts a
-// typed Metadata arg and a read-only extra input.
+// typed Metadata arg, and that a ReadOnly extra input reaches the resolved transaction as a read
+// (is_write:false) while the core's own resolved inputs stay writes.
 func TestCoreAcceptsTypedMetadataAndReadOnlyInput(t *testing.T) {
+	fx := loadGenericFixture(t, "generic_build/call_method_transfer.json")
+	netByte, ok := fx.Input.Network.ByteValue()
+	if !ok {
+		t.Fatalf("unknown network %q", fx.Input.Network)
+	}
+	fetchedJSON, err := json.Marshal(fx.Input.Fetched)
+	if err != nil {
+		t.Fatalf("marshal fetched: %v", err)
+	}
+
+	account := "component_" + strings.Repeat("71", 32)
+	readOnly := "resource_" + strings.Repeat("01", 32)
 	intent := NewTransaction().
-		PayFeeFromAccount("component_"+strings.Repeat("71", 32), 2000).
+		PayFeeFromAccount(account, 2000).
 		CallFunction("template_"+strings.Repeat("01", 32), "instantiate",
 			ArgMetadataValues(map[string]ArgValue{"supply": ArgAmount(100), "name": ArgString("x")})).
-		ExtraInput(InputRef{SubstateID: "resource_" + strings.Repeat("01", 32), ReadOnly: true}).
+		ExtraInput(InputRef{SubstateID: readOnly, ReadOnly: true}).
 		MaxEpoch(10).
 		Intent()
+	// Pin the fee account as an explicit input (as the fixture does), so resolution takes the
+	// explicit path and the fixture's fetched set suffices.
+	version := uint64(0)
+	intent.Inputs = []InputRef{{SubstateID: account, Version: &version}}
 	intentJSON, err := intent.marshalIntent()
 	if err != nil {
 		t.Fatalf("marshal intent: %v", err)
 	}
-	handle, _, err := cffi.BuildUnsignedInstructions(0x26 /* esmeralda */, string(intentJSON))
+	handle, _, err := cffi.BuildUnsignedInstructions(netByte, string(intentJSON))
 	if err != nil {
 		t.Fatalf("core rejected intent %s: %v", intentJSON, err)
 	}
-	cffi.FreeHandle(handle)
+	defer func() { cffi.FreeHandle(handle) }()
+	next, resJSON, err := cffi.ApplyFetchedSubstates(handle, string(fetchedJSON))
+	handle = next
+	if err != nil {
+		t.Fatalf("ApplyFetchedSubstates: %v", err)
+	}
+	var res resolutionEnvelope
+	if uerr := json.Unmarshal([]byte(resJSON), &res); uerr != nil || res.Status != "resolved" {
+		t.Fatalf("resolution = %s (err %v), want resolved", resJSON, uerr)
+	}
+
+	recordJSON, err := cffi.UnsignedRecordForCosign(handle)
+	if err != nil {
+		t.Fatalf("UnsignedRecordForCosign: %v", err)
+	}
+	var record struct {
+		Unsigned struct {
+			V1 struct {
+				Inputs []InputRef `json:"inputs"`
+			} `json:"V1"`
+		} `json:"unsigned"`
+	}
+	if uerr := json.Unmarshal([]byte(recordJSON), &record); uerr != nil {
+		t.Fatalf("unmarshal unsigned record: %v", uerr)
+	}
+	got := map[string]bool{}
+	for _, in := range record.Unsigned.V1.Inputs {
+		got[in.SubstateID] = in.ReadOnly
+	}
+	if ro, ok := got[readOnly]; !ok || !ro {
+		t.Errorf("inputs %s: %s missing or not read-only", recordJSON, readOnly)
+	}
+	if ro, ok := got[account]; !ok || ro {
+		t.Errorf("inputs %s: fee account %s missing or not a write", recordJSON, account)
+	}
 }

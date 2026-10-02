@@ -58,9 +58,10 @@ type Event struct {
 	// TemplateAddress is the address of the template that emitted the event.
 	TemplateAddress string
 	// Payload is the event payload as a flat key→raw-JSON map. Payload values are arbitrary
-	// CBOR since core 0.42.0, rendered to JSON by the indexer: a string value is a JSON string,
-	// an Amount a JSON number (kept raw so a u64 never passes through a float64). It is nil when
-	// the wire payload was absent or null.
+	// CBOR since core 0.42.0, rendered to JSON by the indexer in the same forms as
+	// EventPayload.Value (strings, numbers, and "@cbor" sentinel objects such as a typed address
+	// or a u128 amount) — do not assume a string. It is nil when the wire payload was absent or
+	// null.
 	Payload map[string]json.RawMessage
 }
 

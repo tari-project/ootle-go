@@ -306,9 +306,17 @@ type EventPayload struct {
 	// Key is the payload entry key.
 	Key string
 	// Value is the payload entry value as raw JSON. Payload values are arbitrary CBOR since core
-	// 0.42.0, rendered to JSON by the core: a string value is a JSON string, an Amount a JSON
-	// number (kept raw so a u64 never passes through a float64). Unmarshal it into the type you
-	// expect.
+	// 0.42.0, rendered to JSON by the core (tari_bor's value_serde): text is a JSON string, an
+	// integer within i64/u64 a JSON number (kept raw so it never passes through a float64), and
+	// anything without a natural JSON shape is an "@cbor" sentinel object:
+	//
+	//	{"@cbor":"tag","tag":N,"value":…}       a tagged value, e.g. a typed address in std.* events
+	//	{"@cbor":"int","value":"<decimal>"}     an integer outside i64/u64, e.g. a u128 Amount
+	//	{"@cbor":"bytes","hex":"<hex>"}         a byte string
+	//	{"@cbor":"map","entries":[[k,v],…]}     a map with non-text keys
+	//	{"@cbor":"raw","hex":"<hex>"}           CBOR the core could not render (finalized results only)
+	//
+	// Unmarshal it into the shape you expect for that key; do not assume a string.
 	Value json.RawMessage
 }
 
@@ -337,7 +345,7 @@ func (p EventPayload) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]any{p.Key, value})
 }
 
-// EventSummary is a boundary event summary — engine Event flattened to strings.
+// EventSummary is a boundary event summary — engine Event with its payload values as raw JSON.
 type EventSummary struct {
 	// SubstateID is the emitting substate id, if any.
 	SubstateID string `json:"substate_id,omitempty"`
