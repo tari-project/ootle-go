@@ -175,7 +175,8 @@ func ComponentAtAddress(address string) ComponentRef { return ComponentRef{addre
 
 // ComponentOnWorkspace references a component produced earlier in the same phase and bound to the
 // workspace under label (see PutLastInstructionOutputOnWorkspace). A workspace-targeted CallMethod
-// derives no want (nothing on-ledger to fetch). The label must be bound in the same phase.
+// derives no want (nothing on-ledger to fetch). The label must be bound in the same phase and carry no
+// ".offset" suffix (a component reference has no offset slot) — otherwise a VALIDATION error.
 func ComponentOnWorkspace(label string) ComponentRef { return ComponentRef{workspace: &label} }
 
 // MarshalJSON emits the core's externally-tagged ComponentRef enum.
@@ -407,7 +408,8 @@ func FeeFromAccount(component string) FeeSource { return FeeSource{fromAccount: 
 
 // FeeFromWorkspaceComponent pays the fee from a component bound to the workspace under label during the
 // fee phase (the self-funding pattern). It derives no fee vault want; label must be bound by a
-// PutLastInstructionOutputOnWorkspace in FeeInstructions.
+// PutLastInstructionOutputOnWorkspace in FeeInstructions and, like ComponentOnWorkspace, carry no
+// ".offset" suffix.
 func FeeFromWorkspaceComponent(label string) FeeSource {
 	return FeeSource{fromWorkspaceComponent: &label}
 }
