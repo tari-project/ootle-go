@@ -6,8 +6,8 @@ from. See `docs/native-lib.md`.
 
 | Platform | Crate | ABI | Commit | Profile | Size | sha256 |
 |---|---|---|---|---|---|---|
-| darwin_amd64 | 0.46.0 | ootle-sdk-ffi-c/17 | cc8a83b | release | 38.1MB | ffae0f68a2119ffa… |
-| darwin_arm64 | 0.46.0 | ootle-sdk-ffi-c/17 | cc8a83b | release | 36.1MB | 6eb1bc88cc3872d8… |
-| linux_amd64 | 0.46.0 | ootle-sdk-ffi-c/17 | cc8a83b | release | 54MB | 50088bdb13759740… |
-| linux_arm64 | 0.46.0 | ootle-sdk-ffi-c/17 | cc8a83b | release | 53.7MB | 41d6e870a6ce4e4b… |
-| windows_amd64 | 0.46.0 | ootle-sdk-ffi-c/17 | cc8a83b | release | 39.5MB | c6e931b46da7d67d… |
+| darwin_amd64 | 0.47.0 | ootle-sdk-ffi-c/17 | 9dabb2a | release | 39.8MB | febb172e35e4e3e6… |
+| darwin_arm64 | 0.47.0 | ootle-sdk-ffi-c/17 | 9dabb2a | release | 37.3MB | cfeba797999eaf5a… |
+| linux_amd64 | 0.47.0 | ootle-sdk-ffi-c/17 | 9dabb2a | release | 56.4MB | 8ca10796b31fd73e… |
+| linux_arm64 | 0.47.0 | ootle-sdk-ffi-c/17 | 9dabb2a | release | 55.6MB | 88f04cdb67597740… |
+| windows_amd64 | 0.47.0 | ootle-sdk-ffi-c/17 | 9dabb2a | release | 41.1MB | bc6512992cf8c85a… |
