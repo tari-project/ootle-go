@@ -52,6 +52,16 @@ const fetchChunk = 20
 // an *http.Client of their own.
 const DefaultTimeout = 30 * time.Second
 
+const (
+	// maxResponseBodyBytes caps the size of a 2xx response body read into memory
+	// (16 MiB) so a misbehaving or malicious indexer cannot exhaust process memory.
+	maxResponseBodyBytes = 16 << 20
+
+	// maxErrorBodyBytes caps the error body read on a non-2xx response (4 KiB),
+	// matching the SSE error-body limit and the HTTPError.Body contract.
+	maxErrorBodyBytes = 4096
+)
+
 // FetchedSubstate is the boundary record the core's apply_fetched_substates consumes.
 // It mirrors crates/ootle_sdk_core/src/inputs.rs::FetchedSubstate exactly:
 //
@@ -401,21 +411,33 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, allow
 	}
 	defer resp.Body.Close()
 
-	respBody, readErr := io.ReadAll(resp.Body)
 	if allow404 && resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBodyBytes))
 		return nil, nil
 	}
-	// A read failure must be surfaced before status branching: otherwise a partial
-	// body would be handed to the JSON decoder (2xx) or buried in an HTTPError (non-2xx).
-	if readErr != nil {
-		return nil, &HTTPError{Method: method, URL: full, Status: resp.StatusCode, Err: readErr}
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		if readErr != nil {
+			return nil, &HTTPError{Method: method, URL: full, Status: resp.StatusCode, Err: readErr}
+		}
 		return nil, &HTTPError{
 			Method: method,
 			URL:    full,
 			Status: resp.StatusCode,
-			Body:   string(respBody),
+			Body:   string(errBody),
+		}
+	}
+
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes+1))
+	if readErr != nil {
+		return nil, &HTTPError{Method: method, URL: full, Status: resp.StatusCode, Err: readErr}
+	}
+	if len(respBody) > maxResponseBodyBytes {
+		return nil, &HTTPError{
+			Method: method,
+			URL:    full,
+			Status: resp.StatusCode,
+			Err:    fmt.Errorf("transport: response body exceeds %d bytes", maxResponseBodyBytes),
 		}
 	}
 	return respBody, nil

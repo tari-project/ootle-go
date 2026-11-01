@@ -395,3 +395,49 @@ func TestCurrentEpochServerError(t *testing.T) {
 		t.Fatalf("err = %v, want a 500 *HTTPError", err)
 	}
 }
+
+func TestHTTPErrorBodyTruncatedAtLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, strings.Repeat("x", maxErrorBodyBytes*4))
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL).Submit(context.Background(), "env")
+	var herr *HTTPError
+	if !errors.As(err, &herr) {
+		t.Fatalf("err = %v (%T), want *HTTPError", err, err)
+	}
+	if herr.Status != http.StatusBadGateway {
+		t.Errorf("Status = %d, want %d", herr.Status, http.StatusBadGateway)
+	}
+	if len(herr.Body) != maxErrorBodyBytes {
+		t.Errorf("len(HTTPError.Body) = %d, want %d", len(herr.Body), maxErrorBodyBytes)
+	}
+}
+
+func TestResponseBodyExceedsLimitReturnsHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		chunk := strings.Repeat("a", 64<<10)
+		for written := 0; written <= maxResponseBodyBytes; written += len(chunk) {
+			if _, err := io.WriteString(w, chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL).CurrentEpoch(context.Background())
+	var herr *HTTPError
+	if !errors.As(err, &herr) {
+		t.Fatalf("err = %v (%T), want *HTTPError", err, err)
+	}
+	if herr.Status != http.StatusOK {
+		t.Errorf("Status = %d, want 200", herr.Status)
+	}
+	if herr.Err == nil || !strings.Contains(herr.Err.Error(), "exceeds") {
+		t.Errorf("HTTPError.Err = %v, want size-limit error", herr.Err)
+	}
+}

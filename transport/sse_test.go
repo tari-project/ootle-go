@@ -384,3 +384,82 @@ func TestSplitField(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamTransactionEventsOversizedLineRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("ResponseWriter is not an http.Flusher")
+		}
+		_, _ = w.Write([]byte("data: "))
+		chunk := []byte(strings.Repeat("x", 32<<10))
+		for written := 0; written <= maxSSELineBytes; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	out, errs := c.StreamTransactionEvents(context.Background(), TransactionEventQuery{}, "")
+
+	select {
+	case err := <-errs:
+		var herr *HTTPError
+		if !errors.As(err, &herr) || herr.Err == nil || !strings.Contains(herr.Err.Error(), "SSE line exceeds") {
+			t.Fatalf("err = %v, want SSE line exceeds *HTTPError", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for oversized-line error")
+	}
+	select {
+	case _, ok := <-out:
+		if ok {
+			t.Errorf("expected out to be closed with no events")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("out did not close after oversized-line error")
+	}
+}
+
+func TestStreamTransactionEventsOversizedFrameDataRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("ResponseWriter is not an http.Flusher")
+		}
+		line := "data: " + strings.Repeat("y", 64<<10) + "\n"
+		for sent := 0; sent <= maxSSEEventBytes+len(line); sent += len(line) {
+			if _, err := w.Write([]byte(line)); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	out, errs := c.StreamTransactionEvents(context.Background(), TransactionEventQuery{}, "")
+
+	select {
+	case err := <-errs:
+		var herr *HTTPError
+		if !errors.As(err, &herr) || herr.Err == nil || !strings.Contains(herr.Err.Error(), "SSE event data exceeds") {
+			t.Fatalf("err = %v, want SSE event data exceeds *HTTPError", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for oversized-event error")
+	}
+	select {
+	case _, ok := <-out:
+		if ok {
+			t.Errorf("expected out to be closed with no events")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("out did not close after oversized-event error")
+	}
+}
