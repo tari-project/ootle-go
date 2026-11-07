@@ -559,3 +559,17 @@ func TestCoreAcceptsTypedMetadataAndReadOnlyInput(t *testing.T) {
 		t.Errorf("inputs %s: fee account %s missing or not a write", recordJSON, account)
 	}
 }
+
+func TestFaucetTakeAsDryRunSetsClaimDryRun(t *testing.T) {
+	intent := Faucet(XtrFaucetComponentAddress).Take("fea0").Intent(2000)
+	dry := intent.AsDryRun()
+	if !dry.DryRun {
+		t.Error("AsDryRun must set outer DryRun")
+	}
+	if dry.faucetClaim == nil || !dry.faucetClaim.DryRun {
+		t.Error("AsDryRun must set nested faucetClaim.DryRun")
+	}
+	if intent.faucetClaim.DryRun {
+		t.Error("AsDryRun must not mutate the original receiver's faucetClaim")
+	}
+}

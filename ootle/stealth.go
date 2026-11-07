@@ -190,6 +190,13 @@ type StealthTransferIntent struct {
 	PayFeeFromRevealed bool `json:"pay_fee_from_revealed"`
 }
 
+// AsDryRun returns a dry-run copy of this intent; the receiver is left unchanged. A
+// dry-run submission estimates the fee without committing (see FinalizedResult.EstimatedFeeOr).
+func (i StealthTransferIntent) AsDryRun() StealthTransferIntent {
+	i.DryRun = true
+	return i
+}
+
 // intentWire is the exact JSON shape the core deserializes: Inputs become the on-wire
 // stealthInputSpec list (commitment + owner pk only — the spend secret is sent separately).
 type intentWire struct {
@@ -422,6 +429,12 @@ func (c *Client) sendStealthTransfer(ctx context.Context, network Network, inten
 	var encoded EncodedStealthTransfer
 	if uErr := json.Unmarshal([]byte(encodedJSON), &encoded); uErr != nil {
 		return FinalizedResult{}, &Error{Code: "ENCODING", Message: fmt.Sprintf("unmarshal encoded stealth transfer: %v", uErr)}
+	}
+
+	// A dry run evaluates inline via /transactions/dry-run without committing; the normal
+	// path submits and waits for finalization.
+	if intent.DryRun {
+		return c.submitDryRun(ctx, encoded)
 	}
 
 	// --- Submit + wait for finalization + parse ---------------------------------------------

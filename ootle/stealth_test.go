@@ -699,3 +699,51 @@ func repeat62(s string) string {
 	}
 	return out
 }
+
+func TestSendStealthTransfer_DryRunUsesDryRunEndpoint(t *testing.T) {
+	f := loadStealthFixture(t, "stealth_seal_with_input.json")
+	intent := f.toIntent(t).AsDryRun()
+	if !intent.DryRun {
+		t.Fatal("AsDryRun must set DryRun")
+	}
+
+	index := make(map[string]transport.FetchedSubstate, len(f.Input.Fetched))
+	for _, s := range f.Input.Fetched {
+		index[s.SubstateID] = s
+	}
+	seedStealthAccount(index)
+	rawResult, _ := loadParseRaw(t, "accept.json")
+
+	dryRunCalled := false
+	mock := &mockTransport{
+		fetch: func(_ context.Context, ids []string) ([]transport.FetchedSubstate, error) {
+			out := make([]transport.FetchedSubstate, 0, len(ids))
+			for _, id := range ids {
+				if s, ok := index[id]; ok {
+					out = append(out, s)
+				}
+			}
+			return out, nil
+		},
+		submit: func(context.Context, string) (string, error) {
+			t.Fatal("Submit must not be called when intent.DryRun is true")
+			return "", nil
+		},
+		dryRun: func(context.Context, string) (json.RawMessage, error) {
+			dryRunCalled = true
+			return rawResult, nil
+		},
+	}
+
+	c := NewClient(mock, WithNetwork(f.Input.Network))
+	result, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
+	if err != nil {
+		t.Fatalf("SendStealthTransfer (DryRun): %v", err)
+	}
+	if !dryRunCalled {
+		t.Error("expected SubmitDryRun to be called for DryRun stealth transfer")
+	}
+	if !result.IsCommit() {
+		t.Error("expected commit result from dry run")
+	}
+}
