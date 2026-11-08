@@ -102,27 +102,36 @@ func (o *TransactionOutcome) UnmarshalJSON(data []byte) error {
 		if s != "Commit" {
 			return errors.New("ootle: unknown TransactionOutcome unit variant " + s)
 		}
-		o.Commit = true
+		*o = TransactionOutcome{Commit: true}
 		return nil
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return err
 	}
+	if len(obj) != 1 {
+		return errors.New("ootle: TransactionOutcome JSON must have a single variant key")
+	}
 	if raw, ok := obj["OnlyFeeCommit"]; ok {
-		var r RejectReason
+		var r *RejectReason
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return err
 		}
-		o.OnlyFeeCommit = &r
+		if r == nil {
+			return errors.New("ootle: TransactionOutcome OnlyFeeCommit reason cannot be null")
+		}
+		*o = TransactionOutcome{OnlyFeeCommit: r}
 		return nil
 	}
 	if raw, ok := obj["Reject"]; ok {
-		var r RejectReason
+		var r *RejectReason
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return err
 		}
-		o.Reject = &r
+		if r == nil {
+			return errors.New("ootle: TransactionOutcome Reject reason cannot be null")
+		}
+		*o = TransactionOutcome{Reject: r}
 		return nil
 	}
 	return errors.New("ootle: unrecognised TransactionOutcome JSON")

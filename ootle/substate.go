@@ -85,6 +85,9 @@ func DecodeSubstate(substateValue json.RawMessage) (DecodedSubstate, error) {
 // supplied is a "RESOLUTION" error, never a silent zero. Balances are native uint64 and are the
 // revealed/unlocked amounts only — a confidential total needs separate UTXO scans.
 func AccountBalances(account json.RawMessage, vaults []transport.FetchedSubstate) ([]ResourceBalance, error) {
+	if vaults == nil {
+		vaults = []transport.FetchedSubstate{}
+	}
 	vaultsJSON, err := json.Marshal(vaults)
 	if err != nil {
 		return nil, &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal vault substates: %v", err)}

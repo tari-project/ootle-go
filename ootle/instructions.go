@@ -543,7 +543,9 @@ type FaucetBuilder struct {
 	faucetComponent string
 	instructions    []InstructionSpec
 	claim           *FaucetClaimIntent
+	minEpoch        *uint64
 	maxEpoch        uint64
+	dryRun          bool
 }
 
 // XtrFaucetComponentAddress is the canonical testnet TARI faucet component address. Pass it to Faucet()
@@ -588,6 +590,13 @@ func (f *FaucetBuilder) Deposit(accountComponent, bucketLabel string) *FaucetBui
 	return f
 }
 
+// MinEpoch sets the earliest epoch a Take claim is valid in. Optional and order-independent
+// (applied by Intent).
+func (f *FaucetBuilder) MinEpoch(epoch uint64) *FaucetBuilder {
+	f.minEpoch = &epoch
+	return f
+}
+
 // MaxEpoch pins the last epoch a Take claim may be sequenced in. Optional and order-independent
 // (it is applied by Intent): left unset, the driver settles it from the indexer's current epoch
 // (current + DefaultValidityEpochs). Like the rest of the claim it needs a preceding Take —
@@ -598,10 +607,20 @@ func (f *FaucetBuilder) MaxEpoch(epoch uint64) *FaucetBuilder {
 	return f
 }
 
+// DryRun marks a Take claim as a dry run (fee estimation without committing). Optional and
+// order-independent (applied by Intent).
+func (f *FaucetBuilder) DryRun() *FaucetBuilder {
+	f.dryRun = true
+	return f
+}
+
 // Instructions returns the composed main-phase instruction sequence (TakeFreeCoins/Deposit). For the
 // self-funding Take path, use Intent.
 func (f *FaucetBuilder) Instructions() []InstructionSpec {
-	return f.instructions
+	if f.instructions == nil {
+		return nil
+	}
+	return append([]InstructionSpec(nil), f.instructions...)
 }
 
 // Intent assembles the intent for a Take claim (fee in µTari). It requires a preceding Take; the returned
@@ -615,7 +634,12 @@ func (f *FaucetBuilder) Intent(fee uint64) GenericTransactionIntent {
 	}
 	claim := *f.claim
 	claim.Fee = fee
+	if f.minEpoch != nil {
+		min := *f.minEpoch
+		claim.MinEpoch = &min
+	}
 	claim.MaxEpoch = f.maxEpoch
+	claim.DryRun = f.dryRun
 	// The core reads the fee from the claim; the outer Fee is unused on this path.
 	return GenericTransactionIntent{faucetClaim: &claim}
 }

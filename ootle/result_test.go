@@ -1,6 +1,9 @@
 package ootle
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestPublicTransferIntent_AsDryRun(t *testing.T) {
 	base := PublicTransferIntent{FromAccount: "acct", Amount: 100}
@@ -125,5 +128,45 @@ func TestDiffSummary_FirstUp(t *testing.T) {
 	var nilDiff *DiffSummary
 	if id, ok := nilDiff.FirstUp(PrefixComponent); ok || id != "" {
 		t.Fatalf("nil FirstUp = %q,%v want \"\",false", id, ok)
+	}
+}
+
+func TestTransactionOutcome_UnmarshalJSON_ValidationAndReuse(t *testing.T) {
+	var out TransactionOutcome
+	if err := json.Unmarshal([]byte(`{"Reject":{"code":"EXECUTION_FAILURE","message":"boom"}}`), &out); err != nil {
+		t.Fatalf("unmarshal Reject: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`"Commit"`), &out); err != nil {
+		t.Fatalf("unmarshal Commit into reused struct: %v", err)
+	}
+	if !out.Commit || out.Reject != nil || out.OnlyFeeCommit != nil {
+		t.Fatalf("reused TransactionOutcome retained stale fields: %+v", out)
+	}
+
+	for _, invalid := range []string{
+		`{"Reject":null}`,
+		`{"OnlyFeeCommit":null}`,
+		`{"Reject":{"code":"A","message":"x"},"OnlyFeeCommit":{"code":"B","message":"y"}}`,
+	} {
+		if err := json.Unmarshal([]byte(invalid), &out); err == nil {
+			t.Fatalf("expected error unmarshalling invalid TransactionOutcome %s", invalid)
+		}
+	}
+}
+
+func TestTransferRecipient_UnmarshalJSON_ValidationAndReuse(t *testing.T) {
+	var r TransferRecipient
+	if err := json.Unmarshal([]byte(`{"Account":"component_aa"}`), &r); err != nil {
+		t.Fatalf("unmarshal Account: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"PublicKey":"deadbeef"}`), &r); err != nil {
+		t.Fatalf("unmarshal PublicKey into reused struct: %v", err)
+	}
+	if r.publicKey == nil || *r.publicKey != "deadbeef" || r.account != nil {
+		t.Fatalf("reused TransferRecipient retained stale account field: %+v", r)
+	}
+
+	if err := json.Unmarshal([]byte(`{"PublicKey":"aa","Account":"component_bb"}`), &r); err == nil {
+		t.Fatal("expected error unmarshalling TransferRecipient with both PublicKey and Account")
 	}
 }

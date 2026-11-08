@@ -153,12 +153,15 @@ func (r *TransferRecipient) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	if len(raw) != 1 {
+		return errors.New("ootle: TransferRecipient JSON must have a single variant key")
+	}
 	if v, ok := raw["PublicKey"]; ok {
-		r.publicKey = &v
+		*r = TransferRecipient{publicKey: &v}
 		return nil
 	}
 	if v, ok := raw["Account"]; ok {
-		r.account = &v
+		*r = TransferRecipient{account: &v}
 		return nil
 	}
 	return errors.New("ootle: TransferRecipient JSON has neither PublicKey nor Account")

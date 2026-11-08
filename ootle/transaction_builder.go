@@ -125,5 +125,22 @@ func (b *TransactionBuilder) DryRun() *TransactionBuilder {
 // Intent returns the assembled GenericTransactionIntent. The caller may still adjust it (e.g.
 // .AsDryRun()) before sending.
 func (b *TransactionBuilder) Intent() GenericTransactionIntent {
-	return b.intent
+	out := b.intent
+	if b.intent.FeeInstructions != nil {
+		out.FeeInstructions = append([]InstructionSpec(nil), b.intent.FeeInstructions...)
+	}
+	if b.intent.Instructions != nil {
+		out.Instructions = append([]InstructionSpec(nil), b.intent.Instructions...)
+	}
+	if b.intent.Blobs != nil {
+		out.Blobs = append([]BlobSpec(nil), b.intent.Blobs...)
+	}
+	if b.intent.ExtraInputs != nil {
+		out.ExtraInputs = append([]InputRef(nil), b.intent.ExtraInputs...)
+	}
+	if b.intent.MinEpoch != nil {
+		min := *b.intent.MinEpoch
+		out.MinEpoch = &min
+	}
+	return out
 }
