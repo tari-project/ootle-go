@@ -189,6 +189,10 @@ func (b *StealthTransferBuilder) Intent(fee uint64) (StealthTransferIntent, erro
 		}
 	}
 
+	if fee == 0 && b.fee != 0 {
+		fee = b.fee
+	}
+
 	return StealthTransferIntent{
 		FromAccount:          b.from,
 		ResourceAddress:      b.resource,

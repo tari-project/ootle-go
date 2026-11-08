@@ -368,3 +368,72 @@ func TestWatchEventsCtxCancelCleanClose(t *testing.T) {
 		}
 	}
 }
+
+// TestWatchEventsIdlessFramePreservesLastEventID asserts that when a live SSE frame without an
+// id: line arrives after a numbered frame, reconnecting still sends the last non-empty
+// Last-Event-ID header instead of resetting the cursor to empty.
+func TestWatchEventsIdlessFramePreservesLastEventID(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		connCount int
+		secondLEI string
+		secondQ   string
+	)
+	secondConnected := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		connCount++
+		n := connCount
+		mu.Unlock()
+
+		if n == 1 {
+			writeSSEFrame(t, w, "topic.a", "42", fullBody)
+			writeSSEFrame(t, w, "topic.b", "", fullBody)
+			return
+		}
+		mu.Lock()
+		secondLEI = r.Header.Get("Last-Event-ID")
+		secondQ = r.URL.RawQuery
+		mu.Unlock()
+		if f, ok := w.(http.Flusher); ok {
+			w.WriteHeader(http.StatusOK)
+			f.Flush()
+		}
+		close(secondConnected)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	after := int64(5)
+	out, errs := ootleClient(srv.URL).WatchEvents(ctx, EventFilter{AfterID: &after})
+
+	ev1 := recvEvent(t, out, errs)
+	if ev1.ID != 42 {
+		t.Fatalf("first event ID = %d, want 42", ev1.ID)
+	}
+	ev2 := recvEvent(t, out, errs)
+	if ev2.ID != 0 {
+		t.Fatalf("second event ID = %d, want 0", ev2.ID)
+	}
+
+	select {
+	case <-secondConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for the second connection")
+	}
+
+	mu.Lock()
+	gotLEI := secondLEI
+	gotQ := secondQ
+	mu.Unlock()
+	if gotLEI != "42" {
+		t.Errorf("second request Last-Event-ID = %q, want 42", gotLEI)
+	}
+	if strings.Contains(gotQ, "after_id=") {
+		t.Errorf("second request query = %q, must not re-send after_id once Last-Event-ID is set", gotQ)
+	}
+}
+
