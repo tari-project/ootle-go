@@ -65,5 +65,13 @@ func (b *TransferBuilder) DryRun() *TransferBuilder {
 // Intent returns the assembled PublicTransferIntent. The caller may still adjust it (e.g.
 // .AsDryRun()) before sending.
 func (b *TransferBuilder) Intent() PublicTransferIntent {
-	return b.intent
+	out := b.intent
+	if b.intent.Inputs != nil {
+		out.Inputs = append([]InputRef(nil), b.intent.Inputs...)
+	}
+	if b.intent.MinEpoch != nil {
+		min := *b.intent.MinEpoch
+		out.MinEpoch = &min
+	}
+	return out
 }
