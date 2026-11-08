@@ -699,3 +699,70 @@ func repeat62(s string) string {
 	}
 	return out
 }
+
+func TestSendStealthTransfer_DryRunRoutesToDryRunEndpoint(t *testing.T) {
+	f := loadStealthFixture(t, "stealth_seal_with_input.json")
+	intent := f.toIntent(t)
+	intent.DryRun = true
+
+	index := make(map[string]transport.FetchedSubstate, len(f.Input.Fetched))
+	for _, s := range f.Input.Fetched {
+		index[s.SubstateID] = s
+	}
+	seedStealthAccount(index)
+	rawResult, wantParsed := loadParseRaw(t, "accept.json")
+
+	dryRunCalled := false
+	mock := &mockTransport{
+		fetch: func(_ context.Context, ids []string) ([]transport.FetchedSubstate, error) {
+			out := make([]transport.FetchedSubstate, 0, len(ids))
+			for _, id := range ids {
+				if s, ok := index[id]; ok {
+					out = append(out, s)
+				}
+			}
+			return out, nil
+		},
+		dryRun: func(_ context.Context, envelopeB64 string) (json.RawMessage, error) {
+			dryRunCalled = true
+			if envelopeB64 == "" {
+				t.Error("SubmitDryRun received empty envelope")
+			}
+			return rawResult, nil
+		},
+		submit: func(_ context.Context, _ string) (string, error) {
+			t.Fatal("SubmitTransaction must not be called when intent.DryRun is true")
+			return "", nil
+		},
+	}
+
+	c := NewClient(mock, WithNetwork(f.Input.Network))
+	result, err := c.SendStealthTransfer(context.Background(), intent, f.Input.Keys)
+	if err != nil {
+		t.Fatalf("SendStealthTransfer(DryRun): %v", err)
+	}
+	if !dryRunCalled {
+		t.Fatal("SubmitDryRun was not called for dry-run stealth transfer")
+	}
+	if !reflect.DeepEqual(result, wantParsed) {
+		t.Errorf("parsed FinalizedResult mismatch from committed parse vector")
+	}
+}
+
+func TestBuildAndEncodeStealthTransfer_RejectsInvertedEpochWindow(t *testing.T) {
+	f := loadStealthFixture(t, "stealth_seal_with_input.json")
+	intent := f.toIntent(t)
+	minEpoch := uint64(20)
+	intent.MinEpoch = &minEpoch
+	intent.MaxEpoch = 10
+
+	_, err := BuildAndEncodeStealthTransfer(f.Input.Network, intent, f.Input.Fetched, f.Input.Keys)
+	if err == nil {
+		t.Fatal("expected VALIDATION error when MaxEpoch < MinEpoch")
+	}
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "VALIDATION" {
+		t.Fatalf("error = %v, want *Error{Code:VALIDATION}", err)
+	}
+}
+

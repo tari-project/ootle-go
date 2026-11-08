@@ -425,13 +425,12 @@ func (c *Client) sendStealthTransfer(ctx context.Context, network Network, inten
 	}
 
 	// --- Submit + wait for finalization + parse ---------------------------------------------
-	// Route through the shared SSE-preferred / REST-fallback tail (see finalization.go) so
-	// stealth gets the same finalization wait as the public/generic/cosign paths.
-	envelopeB64, eErr := hexToBase64(encoded.EncodedTransaction)
-	if eErr != nil {
-		return FinalizedResult{}, eErr
+	// A dry run evaluates without committing via /transactions/dry-run; the normal path
+	// routes through the shared SSE-preferred / REST-fallback tail (see finalization.go).
+	if intent.DryRun {
+		return c.submitDryRun(ctx, encoded)
 	}
-	return c.submitAndWait(ctx, envelopeB64)
+	return c.SubmitSealed(ctx, encoded)
 }
 
 // BuildAndEncodeStealthTransfer is the one-shot seed-reproducible stealth send:
@@ -459,6 +458,9 @@ func BuildAndEncodeStealthTransfer(network Network, intent StealthTransferIntent
 	// encode a transaction the network sees as already expired. Say so up front.
 	if intent.MaxEpoch == 0 {
 		return out, &Error{Code: "VALIDATION", Message: "BuildAndEncodeStealthTransfer requires intent.MaxEpoch (the transport-free path cannot read the current epoch); Client.SendStealthTransfer settles it for you"}
+	}
+	if err := checkWindowIsNonEmpty(intent.MaxEpoch, derefEpoch(intent.MinEpoch)); err != nil {
+		return out, err
 	}
 	intentJSON, err := json.Marshal(intent)
 	if err != nil {

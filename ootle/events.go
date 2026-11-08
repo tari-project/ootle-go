@@ -198,7 +198,11 @@ func (c *Client) WatchEvents(ctx context.Context, filter EventFilter) (<-chan Ev
 					continue
 				}
 				// Advance the cursor from the raw id: string so the header round-trips verbatim.
-				lastID = rawEv.ID
+				// A live frame without an id: line (Event.ID == 0) must not clobber a previously
+				// established cursor.
+				if rawEv.ID != "" {
+					lastID = rawEv.ID
+				}
 				delivered = true
 				select {
 				case out <- ev:
