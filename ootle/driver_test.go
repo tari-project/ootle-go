@@ -522,3 +522,22 @@ func TestConnect_BuildsClient(t *testing.T) {
 		t.Fatal("the network-configured client did not reach the transport")
 	}
 }
+
+// TestResolveInputs_CancelledContextSkipsFetch proves resolveInputs checks ctx.Err() before
+// issuing a FetchSubstates call.
+func TestResolveInputs_CancelledContextSkipsFetch(t *testing.T) {
+	mock := &mockTransport{
+		fetch: func(context.Context, []string) ([]transport.FetchedSubstate, error) {
+			t.Error("FetchSubstates must not be called when ctx is already cancelled")
+			return nil, nil
+		},
+	}
+	c := NewClient(mock, WithNetwork(NetworkLocalNet))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.resolveInputs(ctx, nil, `{"want_list":[{"kind":"specific_substate","substate_id":"component_00"}]}`)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}

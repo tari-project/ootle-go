@@ -89,12 +89,26 @@ func (c *Client) submitAndWait(ctx context.Context, envelopeB64 string) (Finaliz
 
 	// Release the SSE connection before polling (a fallback poll may run a while).
 	cancel()
+	if err := ctx.Err(); err != nil {
+		return FinalizedResult{}, err
+	}
 
 	raw, err := c.waitResult(ctx, txID)
 	if err != nil {
 		return FinalizedResult{}, err
 	}
 	return c.parseFinalized(raw)
+}
+
+func matchesFinalizedTx(ev transport.RawSSEEvent, txID string) bool {
+	if ev.Event != finalizedEventName {
+		return false
+	}
+	var fe finalizedEvent
+	if json.Unmarshal(ev.Data, &fe) != nil {
+		return false
+	}
+	return fe.TransactionID == txID
 }
 
 // awaitFinalized blocks until a TransactionFinalized frame for txID arrives (returns nil),
@@ -108,7 +122,11 @@ func (c *Client) awaitFinalized(
 	ctx context.Context, txID string,
 	events <-chan transport.RawSSEEvent, serrs <-chan error,
 ) error {
-	timer := time.NewTimer(c.finalizationTimeout)
+	timeout := c.finalizationTimeout
+	if timeout <= 0 {
+		timeout = defaultFinalizationTimeout
+	}
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
 		select {
@@ -116,19 +134,33 @@ func (c *Client) awaitFinalized(
 			if !open {
 				return errFinalizationStreamClosed
 			}
-			if ev.Event != finalizedEventName {
-				continue
-			}
-			var fe finalizedEvent
-			if json.Unmarshal(ev.Data, &fe) != nil {
-				continue // undecodable frame — skip and keep reading
-			}
-			if fe.TransactionID == txID {
+			if matchesFinalizedTx(ev, txID) {
 				return nil // gate opened
 			}
-		case err := <-serrs:
+		case err, ok := <-serrs:
+			// Drain any already-buffered frames on events before treating a closed/errored
+			// serrs channel as terminal, avoiding a select race when both channels are ready.
+			for {
+				select {
+				case ev, open := <-events:
+					if !open {
+						events = nil
+						goto drained
+					}
+					if matchesFinalizedTx(ev, txID) {
+						return nil
+					}
+				default:
+					goto drained
+				}
+			}
+		drained:
 			if err != nil {
 				return err
+			}
+			if !ok && events != nil {
+				serrs = nil
+				continue
 			}
 			// serrs yielded nil: the buffered error channel was drained/closed without a
 			// terminal error. Treat it as a stream end and fall back.

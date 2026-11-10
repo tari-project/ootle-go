@@ -248,6 +248,65 @@ func TestSubmitSealed_ContextCancelDuringSSE(t *testing.T) {
 	}
 }
 
+// TestAwaitFinalized_DrainsBufferedEventWhenErrsClosed proves that when the SSE producer
+// buffers the matching TransactionFinalized frame and immediately closes both channels,
+// awaitFinalized deterministically drains the buffered frame instead of losing a select
+// race against the closed serrs channel.
+func TestAwaitFinalized_DrainsBufferedEventWhenErrsClosed(t *testing.T) {
+	c := NewClient(&mockTransport{})
+	for i := 0; i < 100; i++ {
+		out := make(chan transport.RawSSEEvent, 2)
+		errs := make(chan error, 1)
+		out <- transport.RawSSEEvent{Event: "NewEpoch", Data: json.RawMessage(`{"epoch":1}`)}
+		out <- finalizedFrame(fakeTxID)
+		close(out)
+		close(errs)
+
+		if err := c.awaitFinalized(context.Background(), fakeTxID, out, errs); err != nil {
+			t.Fatalf("iteration %d: awaitFinalized = %v, want nil (buffered frame was dropped)", i, err)
+		}
+	}
+}
+
+// TestAwaitFinalized_ZeroTimeoutDefaultsToSafetyNet proves a non-positive finalizationTimeout
+// falls back to defaultFinalizationTimeout rather than firing an immediate 0ns timer.
+func TestAwaitFinalized_ZeroTimeoutDefaultsToSafetyNet(t *testing.T) {
+	c := &Client{finalizationWait: true, finalizationTimeout: 0}
+	out := make(chan transport.RawSSEEvent, 1)
+	errs := make(chan error, 1)
+	time.AfterFunc(15*time.Millisecond, func() {
+		out <- finalizedFrame(fakeTxID)
+	})
+	if err := c.awaitFinalized(context.Background(), fakeTxID, out, errs); err != nil {
+		t.Fatalf("awaitFinalized with zero finalizationTimeout failed: %v", err)
+	}
+}
+
+// TestSubmitSealed_ContextCancelDuringSSESkipsPoll proves cancelling ctx during the SSE wait
+// returns ctx.Err() directly without issuing a wasted GetResult poll on the cancelled context.
+func TestSubmitSealed_ContextCancelDuringSSESkipsPoll(t *testing.T) {
+	var getResultCalls int
+	mock := &mockTransport{
+		submit: func(context.Context, string) (string, error) { return fakeTxID, nil },
+		stream: silentStream,
+		result: func(context.Context, string) (json.RawMessage, bool, error) {
+			getResultCalls++
+			return json.RawMessage(`{"Finalized":{"final_decision":"Commit"}}`), true, nil
+		},
+	}
+
+	c := NewClient(mock, WithFinalizationTimeout(5*time.Second))
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(15*time.Millisecond, cancel)
+	_, err := c.SubmitSealed(ctx, EncodedPublicTransfer{EncodedTransaction: fakeEncodedTx})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if getResultCalls != 0 {
+		t.Fatalf("GetResult called %d time(s) after context cancellation, want 0", getResultCalls)
+	}
+}
+
 // pollOnlytransport is a Transport WITHOUT the StreamFinalizedEvents capability, used to
 // prove the no-SSE path. GetResult always returns raw as finalized.
 type pollOnlyTransport struct {

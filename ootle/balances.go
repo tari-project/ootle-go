@@ -2,6 +2,7 @@ package ootle
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/tari-project/ootle-go/transport"
 )
@@ -16,14 +17,25 @@ import (
 // confidential total, which requires separate UTXO scanning. Context cancellation flows
 // through the underlying fetches. An absent account substate is a RESOLUTION *Error.
 func (c *Client) AccountBalances(ctx context.Context, account string) ([]ResourceBalance, error) {
+	if account == "" {
+		return nil, &Error{Code: "VALIDATION", Message: "account address must not be empty"}
+	}
 	accountFetched, err := c.transport.FetchSubstates(ctx, []string{account})
 	if err != nil {
 		return nil, err
 	}
-	if len(accountFetched) != 1 {
+	var accountValue json.RawMessage
+	found := false
+	for _, sub := range accountFetched {
+		if sub.SubstateID == account || (len(accountFetched) == 1 && sub.SubstateID == "") {
+			accountValue = sub.SubstateValue
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, &Error{Code: "RESOLUTION", Message: "expected 1 account substate for " + account}
 	}
-	accountValue := accountFetched[0].SubstateValue
 
 	wantIDs, err := AccountBalanceWants(accountValue)
 	if err != nil {
