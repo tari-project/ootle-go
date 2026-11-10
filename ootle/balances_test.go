@@ -153,3 +153,36 @@ func TestClientAccountBalancesTransportError(t *testing.T) {
 		t.Fatalf("expected transport error to propagate, got %v", err)
 	}
 }
+
+func TestClientAccountBalancesEmptyAddress(t *testing.T) {
+	c := NewClient(&mockTransport{
+		fetch: func(_ context.Context, _ []string) ([]transport.FetchedSubstate, error) {
+			t.Error("FetchSubstates must not be called for an empty account address")
+			return nil, nil
+		},
+	})
+
+	_, err := c.AccountBalances(context.Background(), "")
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "VALIDATION" {
+		t.Fatalf("expected VALIDATION *Error for empty account address, got %v", err)
+	}
+}
+
+func TestClientAccountBalancesMismatchedSubstateID(t *testing.T) {
+	f := loadBalanceFixture(t)
+	c := NewClient(&mockTransport{
+		fetch: func(_ context.Context, _ []string) ([]transport.FetchedSubstate, error) {
+			return []transport.FetchedSubstate{{
+				SubstateID:    "component_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				SubstateValue: f.Input.SubstateValue,
+			}}, nil
+		},
+	})
+
+	_, err := c.AccountBalances(context.Background(), testAccountAddress)
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "RESOLUTION" {
+		t.Fatalf("expected RESOLUTION *Error when transport returns a different component ID, got %v", err)
+	}
+}
