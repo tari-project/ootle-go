@@ -22,7 +22,7 @@ package cffi
 // CoTaskMemFree) and dbghelp backs backtrace. The lib's own provenance.json names them as
 // winapi-rs's bundled import libs (-lwinapi_ole32 …), which cgo's mingw link cannot see — the
 // system libs below are the equivalents.
-#cgo windows,amd64 LDFLAGS: ${SRCDIR}/lib/windows_amd64/libootle_sdk_ffi_c.a -lws2_32 -luserenv -lbcrypt -lntdll -ladvapi32 -lole32 -lshell32 -ldbghelp
+#cgo windows,amd64 LDFLAGS: ${SRCDIR}/lib/windows_amd64/libootle_sdk_ffi_c.a -lws2_32 -luserenv -lbcrypt -lntdll -ladvapi32 -lole32 -lshell32 -ldbghelp -lsynchronization
 #cgo darwin LDFLAGS: -framework Security -framework CoreFoundation
 #include <stdlib.h>
 #include "ootle_sdk.h"
