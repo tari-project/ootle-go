@@ -59,7 +59,9 @@ func Run(ctx context.Context) error {
 	}
 	defer sealer.Close() // no-op once sealed; releases the handle on error paths.
 
-	record, err := sealer.UnsignedRecord()
+	// The record fixes the authorizer set up front: every authorization signs over it, so it names
+	// both A (whose owner proof the spend needs) and B.
+	record, err := sealer.UnsignedRecord([]string{a.Keys.AccountPublicKey, b.AccountPublicKey})
 	if err != nil {
 		return err
 	}

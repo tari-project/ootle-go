@@ -18,7 +18,8 @@ type Authorization struct {
 }
 
 // AddSignature is PARTY B's step in the co-sign hand-off: authorize party A's unsigned-transaction
-// record, committing to A's seal public key (so the signature binds to the exact tx A will seal). The
+// record, committing to A's seal public key and the record's authorizer set (so the signature binds to
+// the exact tx A will seal). A signer whose key is not one of the record's authorizers is "INVALID". The
 // production (random-nonce) sr25519 signature stays in the core; the host only marshals JSON.
 //
 // unsignedRecordJSON is the UnsignedTransactionRecord JSON A shipped (from
@@ -115,7 +116,8 @@ func (c *Client) PrepareCosign(ctx context.Context, intent PublicTransferIntent)
 // authorizations passed to SealWithAuth, else the seal fails with an "INVALID" error.
 //
 // Call it before UnsignedRecord: the record commits to the main signer, so every co-signer signs over
-// it, and SealWithAuth seals with the same value. Changing it after the record has been shipped makes
+// it, and SealWithAuth seals with the same value. The main signer must also be one of the authorizers
+// passed to UnsignedRecord ("INVALID" otherwise). Changing it after the record has been shipped makes
 // the collected authorizations fail to verify ("VALIDATION").
 func (s *CosignSealer) SetMainSigner(publicKeyHex string) {
 	if s != nil {
@@ -128,11 +130,24 @@ func (s *CosignSealer) SetMainSigner(publicKeyHex string) {
 // seal afterwards. An unresolved partial is a "RESOLUTION" error (PrepareCosign always returns a
 // resolved one, so this is a safety guard). The record declares the main signer set with
 // SetMainSigner (none by default).
-func (s *CosignSealer) UnsignedRecord() (string, error) {
+//
+// authorizers are the account public keys (lowercase hex) of every co-signer that will authorize the
+// transaction. Each authorization signs over the whole set, so it is fixed here, before anyone signs:
+// SealWithAuth then needs exactly one authorization from each key, and AddSignature refuses a signer
+// outside the set ("INVALID"). Adding a co-signer later means shipping a new record and collecting
+// every authorization again. An empty set is "INVALID"; a repeated key counts once.
+func (s *CosignSealer) UnsignedRecord(authorizers []string) (string, error) {
 	if s == nil || s.handle == nil {
 		return "", &Error{Code: "INTERNAL", Message: "UnsignedRecord called on a closed/consumed CosignSealer"}
 	}
-	recordJSON, cerr := cffi.UnsignedRecordForCosign(s.handle, s.mainSigner)
+	if authorizers == nil {
+		authorizers = []string{}
+	}
+	authorizersJSON, err := json.Marshal(authorizers)
+	if err != nil {
+		return "", &Error{Code: "ENCODING", Message: fmt.Sprintf("marshal authorizers: %v", err)}
+	}
+	recordJSON, cerr := cffi.UnsignedRecordForCosign(s.handle, string(authorizersJSON), s.mainSigner)
 	if cerr != nil {
 		return "", fromCffiError(cerr)
 	}
@@ -141,7 +156,9 @@ func (s *CosignSealer) UnsignedRecord() (string, error) {
 
 // SealWithAuth is PARTY A's final step and the supported offline/HSM co-sign seal: attach the collected
 // authorizations and seal (random-nonce) into the submit-ready encoded transaction. keys is just the
-// account secret. It CONSUMES the sealer (the handle is released); do not reuse it. An empty
+// account secret. authorizations must hold one authorization from each key of the record's
+// authorizer set (any order); one missing, or one signed over a different set, is "VALIDATION". It
+// CONSUMES the sealer (the handle is released); do not reuse it. An empty
 // authorizations slice seals as a plain single-key transfer, with the seal signer as the main signer
 // (SetMainSigner must then be unset). With authorizations it declares the SetMainSigner key, or no
 // main signer when unset.

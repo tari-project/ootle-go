@@ -38,7 +38,7 @@ import (
 // ExpectedABIVersion is the frozen ABI tag the vendored lib must report. A mismatch
 // means the vendored lib drifted from this wrapper — fail loudly rather than
 // mis-marshal. Keep in sync with `ootle_abi_version()` in ootle_sdk.h.
-const ExpectedABIVersion = "ootle-sdk-ffi-c/19"
+const ExpectedABIVersion = "ootle-sdk-ffi-c/20"
 
 var (
 	abiOnce sync.Once
@@ -812,22 +812,27 @@ func AccountBalanceWants(accountSubstateJSON string) (string, error) {
 // main_signer rule, BOR encode) stays in the core; the host only marshals JSON.
 
 // UnsignedRecordForCosign wraps ootle_unsigned_record_for_cosign. It BORROWS the public handle (does
-// NOT consume it) and returns the UnsignedTransactionRecord JSON ({"unsigned":...}) party A ships to B.
-// The handle is left intact — consume it later via SealAndEncodeWithAuth* or free it via FreeHandle.
+// NOT consume it) and returns the UnsignedTransactionRecord JSON ({"unsigned":...,"authorizers":[...]})
+// party A ships to every co-signer. The handle is left intact — consume it later via
+// SealAndEncodeWithAuth* or free it via FreeHandle. authorizersJSON is a JSON array of the lowercase-hex
+// public keys of every co-signer (each signs over the whole set); an empty array is "INVALID".
 // mainSignerHex (lowercase hex, "" ⇒ NULL ⇒ no main signer) names the co-signer the transaction acts
-// as wherever it needs a single signer; pass the same value to SealAndEncodeWithAuth. An unresolved
-// partial is a "RESOLUTION" error; bad mainSignerHex is "PARSE".
-func UnsignedRecordForCosign(h *Handle, mainSignerHex string) (string, error) {
+// as wherever it needs a single signer; it must be one of the authorizers ("INVALID" otherwise). Pass
+// the same value to SealAndEncodeWithAuth. An unresolved partial is a "RESOLUTION" error; bad
+// authorizersJSON or mainSignerHex is "PARSE".
+func UnsignedRecordForCosign(h *Handle, authorizersJSON, mainSignerHex string) (string, error) {
 	if err := ensureABI(); err != nil {
 		return "", err
 	}
 	if h == nil || h.ptr == nil {
 		return "", &Error{Code: "INTERNAL", Message: "UnsignedRecordForCosign called with a nil/consumed handle"}
 	}
+	cAuthorizers := C.CString(authorizersJSON)
+	defer C.free(unsafe.Pointer(cAuthorizers))
 	cMainSigner := nullableCString(mainSignerHex)
 	defer C.free(unsafe.Pointer(cMainSigner))
 	// Borrowing call — do NOT nil h.ptr (the handle survives for a later consume/free).
-	env := consume(C.ootle_unsigned_record_for_cosign(h.ptr, cMainSigner))
+	env := consume(C.ootle_unsigned_record_for_cosign(h.ptr, cAuthorizers, cMainSigner))
 	if !env.ok {
 		return "", env.asError()
 	}

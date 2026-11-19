@@ -1185,7 +1185,7 @@ func cosignAuthorize(t *testing.T, fx goldenFixture, handle *cffi.Handle, netByt
 	if fx.Input.CosignSealPK == "" || fx.Input.CosignSignerSecret == "" {
 		t.Fatalf("fixture %q: cosign op requires input.cosign_seal_pk + input.cosign_signer_secret", fx.Name)
 	}
-	recordJSON, err := cffi.UnsignedRecordForCosign(handle, "")
+	recordJSON, err := cffi.UnsignedRecordForCosign(handle, `["`+cosignSignerPublicKey+`"]`, "")
 	if err != nil {
 		t.Fatalf("fixture %q: UnsignedRecordForCosign: %v", fx.Name, err)
 	}
