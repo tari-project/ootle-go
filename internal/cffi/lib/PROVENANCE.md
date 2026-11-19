@@ -6,8 +6,8 @@ from. See `docs/native-lib.md`.
 
 | Platform | Crate | ABI | Commit | Profile | Size | sha256 |
 |---|---|---|---|---|---|---|
-| darwin_amd64 | 0.53.5 | ootle-sdk-ffi-c/19 | f987c53 | release | 41.6MB | 63268c1bdfe0d8c1… |
-| darwin_arm64 | 0.53.5 | ootle-sdk-ffi-c/19 | f987c53 | release | 39.2MB | 278d1e20ac09c894… |
-| linux_amd64 | 0.53.5 | ootle-sdk-ffi-c/19 | f987c53 | release | 58.7MB | d123500cbf68d588… |
-| linux_arm64 | 0.53.5 | ootle-sdk-ffi-c/19 | f987c53 | release | 57.7MB | a460f09697ee0d1b… |
-| windows_amd64 | 0.53.5 | ootle-sdk-ffi-c/19 | f987c53 | release | 43.4MB | ce207bced7027052… |
+| darwin_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 41.8MB | 979b01a1aa8ca3a0… |
+| darwin_arm64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 39.4MB | 233e233a75530372… |
+| linux_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 59MB | bcfabf3b6438463b… |
+| linux_arm64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 58.1MB | 1070f6944d1285b2… |
+| windows_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 43.6MB | ddd0fc3ce59702c9… |
