@@ -26,6 +26,11 @@ type cosignFixture struct {
 	} `json:"input"`
 }
 
+// cosignSignerPublicKey is the account public key of the cosign vector's cosign_signer_secret (party
+// B), the key the vector's sealed transaction carries. The record names it as the sole authorizer; a
+// wrong value fails loudly, since AddSignature refuses a signer outside the record's set.
+const cosignSignerPublicKey = "fcee5a0d228484be47257110278cd3ab7146ab74e4c3aff7d4d14cd63753ed3c"
+
 func loadCosignFixture(t *testing.T, rel string) cosignFixture {
 	t.Helper()
 	path := filepath.Join("testdata", "fixtures", "cosign", rel)
@@ -83,7 +88,7 @@ func TestManualCoSigning(t *testing.T) {
 	// Always release the handle if we bail before sealing.
 	defer sealer.Close()
 
-	record, err := sealer.UnsignedRecord()
+	record, err := sealer.UnsignedRecord([]string{cosignSignerPublicKey})
 	if err != nil {
 		t.Fatalf("UnsignedRecord (party A): %v", err)
 	}
@@ -139,7 +144,7 @@ func TestManualCoSigning_TamperedAuthorizationRejected(t *testing.T) {
 	}
 	defer sealer.Close()
 
-	record, err := sealer.UnsignedRecord()
+	record, err := sealer.UnsignedRecord([]string{cosignSignerPublicKey})
 	if err != nil {
 		t.Fatalf("UnsignedRecord: %v", err)
 	}
@@ -199,18 +204,8 @@ func cosignMainSignerSetup(t *testing.T, mainSigner func(bPublicKey string) stri
 	}
 	t.Cleanup(sealer.Close)
 
-	// B's public key, from an authorization over a throwaway record (the key is the same).
-	probe, err := sealer.UnsignedRecord()
-	if err != nil {
-		t.Fatalf("UnsignedRecord: %v", err)
-	}
-	probeAuth, err := AddSignature(f.Input.Network, probe, f.Input.CosignSealPK, f.Input.CosignSignerSecret)
-	if err != nil {
-		t.Fatalf("AddSignature: %v", err)
-	}
-
-	sealer.SetMainSigner(mainSigner(probeAuth.PublicKey))
-	record, err := sealer.UnsignedRecord()
+	sealer.SetMainSigner(mainSigner(cosignSignerPublicKey))
+	record, err := sealer.UnsignedRecord([]string{cosignSignerPublicKey})
 	if err != nil {
 		t.Fatalf("UnsignedRecord: %v", err)
 	}
@@ -251,4 +246,75 @@ func TestManualCoSigning_MainSignerMustAuthorize(t *testing.T) {
 	if !asOotleError(err, &e) || e.Code != "INVALID" {
 		t.Fatalf("SealWithAuth with a main signer outside the authorizations: err = %v, want INVALID", err)
 	}
+}
+
+// cosignSealer resolves the cosign vector into a fresh sealer (no main signer).
+func cosignSealer(t *testing.T) (*CosignSealer, cosignFixture) {
+	t.Helper()
+	f := loadCosignFixture(t, "seal_with_auth.json")
+	mock := &mockTransport{
+		fetch: func(_ context.Context, _ []string) ([]transport.FetchedSubstate, error) {
+			return f.Input.Fetched, nil
+		},
+	}
+	sealer, err := NewClient(mock, WithNetwork(f.Input.Network)).PrepareCosign(context.Background(), f.Input.Intent)
+	if err != nil {
+		t.Fatalf("PrepareCosign: %v", err)
+	}
+	t.Cleanup(sealer.Close)
+	return sealer, f
+}
+
+func wantCode(t *testing.T, what string, err error, code string) {
+	t.Helper()
+	var e *Error
+	if !asOotleError(err, &e) || e.Code != code {
+		t.Fatalf("%s: err = %v, want %s", what, err, code)
+	}
+}
+
+// TestManualCoSigning_AuthorizerSet covers the authorizer set the record fixes before anyone signs.
+func TestManualCoSigning_AuthorizerSet(t *testing.T) {
+	t.Run("empty set is invalid", func(t *testing.T) {
+		sealer, _ := cosignSealer(t)
+		for _, set := range [][]string{nil, {}} {
+			_, err := sealer.UnsignedRecord(set)
+			wantCode(t, "UnsignedRecord(empty)", err, "INVALID")
+		}
+	})
+
+	t.Run("main signer outside the set is invalid", func(t *testing.T) {
+		sealer, f := cosignSealer(t)
+		sealer.SetMainSigner(f.Input.CosignSealPK)
+		_, err := sealer.UnsignedRecord([]string{cosignSignerPublicKey})
+		wantCode(t, "UnsignedRecord with an outside main signer", err, "INVALID")
+	})
+
+	t.Run("signer outside the set is refused", func(t *testing.T) {
+		sealer, f := cosignSealer(t)
+		record, err := sealer.UnsignedRecord([]string{f.Input.CosignSealPK})
+		if err != nil {
+			t.Fatalf("UnsignedRecord: %v", err)
+		}
+		_, err = AddSignature(f.Input.Network, record, f.Input.CosignSealPK, f.Input.CosignSignerSecret)
+		wantCode(t, "AddSignature by a non-authorizer", err, "INVALID")
+	})
+
+	t.Run("a missing co-signer does not verify", func(t *testing.T) {
+		sealer, f := cosignSealer(t)
+		other, err := GenerateAccountKey()
+		if err != nil {
+			t.Fatalf("GenerateAccountKey: %v", err)
+		}
+		record, err := sealer.UnsignedRecord([]string{cosignSignerPublicKey, other.AccountPublicKey})
+		if err != nil {
+			t.Fatalf("UnsignedRecord: %v", err)
+		}
+		auth, err := AddSignature(f.Input.Network, record, f.Input.CosignSealPK, f.Input.CosignSignerSecret)
+		if err != nil {
+			t.Fatalf("AddSignature: %v", err)
+		}
+		_, err = sealer.SealWithAuth(f.Input.Keys, []Authorization{auth})
+		wantCode(t, "SealWithAuth missing a co-signer", err, "VALIDATION")
+	})
 }

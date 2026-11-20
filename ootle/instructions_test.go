@@ -534,22 +534,22 @@ func TestCoreAcceptsTypedMetadataAndReadOnlyInput(t *testing.T) {
 		t.Fatalf("resolution = %s (err %v), want resolved", resJSON, uerr)
 	}
 
-	recordJSON, err := cffi.UnsignedRecordForCosign(handle, "")
+	recordJSON, err := cffi.UnsignedRecordForCosign(handle, `["`+cosignSignerPublicKey+`"]`, "")
 	if err != nil {
 		t.Fatalf("UnsignedRecordForCosign: %v", err)
 	}
 	var record struct {
 		Unsigned struct {
-			V1 struct {
+			V2 struct {
 				Inputs []InputRef `json:"inputs"`
-			} `json:"V1"`
+			} `json:"V2"`
 		} `json:"unsigned"`
 	}
 	if uerr := json.Unmarshal([]byte(recordJSON), &record); uerr != nil {
 		t.Fatalf("unmarshal unsigned record: %v", uerr)
 	}
 	got := map[string]bool{}
-	for _, in := range record.Unsigned.V1.Inputs {
+	for _, in := range record.Unsigned.V2.Inputs {
 		got[in.SubstateID] = in.ReadOnly
 	}
 	if ro, ok := got[readOnly]; !ok || !ro {
