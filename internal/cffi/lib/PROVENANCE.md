@@ -6,8 +6,8 @@ from. See `docs/native-lib.md`.
 
 | Platform | Crate | ABI | Commit | Profile | Size | sha256 |
 |---|---|---|---|---|---|---|
-| darwin_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 41.8MB | 979b01a1aa8ca3a0… |
-| darwin_arm64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 39.4MB | 233e233a75530372… |
-| linux_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 59MB | bcfabf3b6438463b… |
-| linux_arm64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 58.1MB | 1070f6944d1285b2… |
-| windows_amd64 | 0.55.0 | ootle-sdk-ffi-c/19 | b7c964c | release | 43.6MB | ddd0fc3ce59702c9… |
+| darwin_amd64 | 0.56.0 | ootle-sdk-ffi-c/20 | 221753a | release | 41.5MB | fe6250c004396ec7… |
+| darwin_arm64 | 0.56.0 | ootle-sdk-ffi-c/20 | 221753a | release | 39.2MB | aa7dabd610afd066… |
+| linux_amd64 | 0.56.0 | ootle-sdk-ffi-c/20 | 221753a | release | 58.6MB | f497fce94c05ebe9… |
+| linux_arm64 | 0.56.0 | ootle-sdk-ffi-c/20 | 221753a | release | 57.7MB | 1787a4c582844ba8… |
+| windows_amd64 | 0.56.0 | ootle-sdk-ffi-c/20 | 221753a | release | 43.3MB | 3197984e58eb7a7e… |
