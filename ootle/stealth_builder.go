@@ -65,17 +65,19 @@ func (o StealthOutputSpec) WithPayTo(p StealthPayTo) StealthOutputSpec {
 // revealed buckets are added, and leaves Inputs resolved through the explicit spend list (a
 // confidential transfer names the UTXOs it spends; the driver still fetches their substates).
 type StealthTransferBuilder struct {
-	from               string
-	resource           string
-	fee                uint64
-	inputs             []StealthTransferInput
-	outputs            []StealthOutputSpec
-	revealedInput      uint64
-	revealedOutput     uint64
-	payFeeFromRevealed bool
-	minEpoch           *uint64
-	maxEpoch           uint64
-	dryRun             bool
+	from                   string
+	resource               string
+	fee                    uint64
+	inputs                 []StealthTransferInput
+	outputs                []StealthOutputSpec
+	revealedInput          uint64
+	revealedInputOverflow  bool
+	revealedOutput         uint64
+	revealedOutputOverflow bool
+	payFeeFromRevealed     bool
+	minEpoch               *uint64
+	maxEpoch               uint64
+	dryRun                 bool
 }
 
 // NewStealthTransfer starts a confidential-transfer builder funded from fromAccount
@@ -93,6 +95,9 @@ func (b *StealthTransferBuilder) Fee(microTari uint64) *StealthTransferBuilder {
 // SpendRevealedInput adds amount (µTari) to the revealed-input bucket — the plaintext value
 // drawn from the from-account's revealed vault to fund the transfer.
 func (b *StealthTransferBuilder) SpendRevealedInput(amount uint64) *StealthTransferBuilder {
+	if maxUint64-b.revealedInput < amount {
+		b.revealedInputOverflow = true
+	}
 	b.revealedInput += amount
 	return b
 }
@@ -125,10 +130,15 @@ func (b *StealthTransferBuilder) ToOutput(spec StealthOutputSpec) *StealthTransf
 	return b
 }
 
+const maxUint64 = ^uint64(0)
+
 // ToRevealedOutput adds amount (µTari) to the revealed-output bucket (e.g. change back to
 // self). It declares the intent-level revealed-output total; per-output WithRevealed deposits
 // must reconcile with it (the builder validates this in Intent).
 func (b *StealthTransferBuilder) ToRevealedOutput(amount uint64) *StealthTransferBuilder {
+	if maxUint64-b.revealedOutput < amount {
+		b.revealedOutputOverflow = true
+	}
 	b.revealedOutput += amount
 	return b
 }
@@ -169,8 +179,26 @@ func (b *StealthTransferBuilder) DryRun() *StealthTransferBuilder {
 //   - a confidential-input spend with no revealed input must set PayFeeFromRevealed, or the
 //     account never signs the fee — a missing flag is an actionable VALIDATION error.
 func (b *StealthTransferBuilder) Intent(fee uint64) (StealthTransferIntent, error) {
+	if b.revealedInputOverflow {
+		return StealthTransferIntent{}, &Error{
+			Code:    "VALIDATION",
+			Message: "revealed-input overflow: SpendRevealedInput amounts exceed uint64",
+		}
+	}
+	if b.revealedOutputOverflow {
+		return StealthTransferIntent{}, &Error{
+			Code:    "VALIDATION",
+			Message: "revealed-output overflow: ToRevealedOutput amounts exceed uint64",
+		}
+	}
 	var perOutputRevealed uint64
 	for _, o := range b.outputs {
+		if maxUint64-perOutputRevealed < o.RevealedAmount {
+			return StealthTransferIntent{}, &Error{
+				Code:    "VALIDATION",
+				Message: "revealed-output overflow: per-output revealed amounts exceed uint64",
+			}
+		}
 		perOutputRevealed += o.RevealedAmount
 	}
 	if perOutputRevealed != b.revealedOutput {
@@ -189,15 +217,23 @@ func (b *StealthTransferBuilder) Intent(fee uint64) (StealthTransferIntent, erro
 		}
 	}
 
+	inputs := append([]StealthTransferInput(nil), b.inputs...)
+	outputs := append([]StealthOutputSpec(nil), b.outputs...)
+	var minEpoch *uint64
+	if b.minEpoch != nil {
+		e := *b.minEpoch
+		minEpoch = &e
+	}
+
 	return StealthTransferIntent{
 		FromAccount:          b.from,
 		ResourceAddress:      b.resource,
 		Fee:                  fee,
-		Inputs:               b.inputs,
-		Outputs:              b.outputs,
+		Inputs:               inputs,
+		Outputs:              outputs,
 		RevealedInputAmount:  b.revealedInput,
 		RevealedOutputAmount: b.revealedOutput,
-		MinEpoch:             b.minEpoch,
+		MinEpoch:             minEpoch,
 		MaxEpoch:             b.maxEpoch,
 		DryRun:               b.dryRun,
 		PayFeeFromRevealed:   b.payFeeFromRevealed,

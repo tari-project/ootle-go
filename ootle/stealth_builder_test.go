@@ -201,3 +201,29 @@ func TestStealthTransferBuilder_DryRunAndEpochs(t *testing.T) {
 		t.Fatalf("MaxEpoch = %v, want 9", intent.MaxEpoch)
 	}
 }
+
+func TestStealthTransferBuilder_RevealedOverflowError(t *testing.T) {
+	_, err := NewStealthTransfer("component_from", "resource_tari").
+		SpendRevealedInput(^uint64(0)).
+		SpendRevealedInput(1).
+		Intent(10)
+	if err == nil {
+		t.Fatal("expected a VALIDATION error on SpendRevealedInput overflow")
+	}
+
+	_, err = NewStealthTransfer("component_from", "resource_tari").
+		ToRevealedOutput(^uint64(0)).
+		ToRevealedOutput(1).
+		Intent(10)
+	if err == nil {
+		t.Fatal("expected a VALIDATION error on ToRevealedOutput overflow")
+	}
+
+	_, err = NewStealthTransfer("component_from", "resource_tari").
+		ToOutput(NewStealthOutput("a", "v", 0, "resource_tari").WithRevealed(^uint64(0))).
+		ToOutput(NewStealthOutput("a", "v", 0, "resource_tari").WithRevealed(1)).
+		Intent(10)
+	if err == nil {
+		t.Fatal("expected a VALIDATION error on per-output RevealedAmount overflow")
+	}
+}

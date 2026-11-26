@@ -185,6 +185,13 @@ type PublicTransferIntent struct {
 // dry-run submission estimates the fee without committing (see FinalizedResult.EstimatedFeeOr).
 func (i PublicTransferIntent) AsDryRun() PublicTransferIntent {
 	i.DryRun = true
+	if i.Inputs != nil {
+		i.Inputs = append([]InputRef(nil), i.Inputs...)
+	}
+	if i.MinEpoch != nil {
+		e := *i.MinEpoch
+		i.MinEpoch = &e
+	}
 	return i
 }
 
