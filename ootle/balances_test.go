@@ -100,8 +100,8 @@ func TestClientAccountBalanceMissingResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AccountBalance: %v", err)
 	}
-	if got != 0 {
-		t.Fatalf("AccountBalance for absent resource = %d, want 0", got)
+	if !got.IsZero() {
+		t.Fatalf("AccountBalance for absent resource = %s, want 0", got)
 	}
 }
 

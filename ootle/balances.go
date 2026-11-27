@@ -41,19 +41,19 @@ func (c *Client) AccountBalances(ctx context.Context, account string) ([]Resourc
 	return AccountBalances(accountValue, vaults)
 }
 
-// AccountBalance reads a single resource's revealed balance for an account. It returns 0 when
+// AccountBalance reads a single resource's revealed balance for an account. It returns zero when
 // the account holds no vault of that resource (not an error). Any fetch/decode failure from
 // the underlying AccountBalances read propagates unchanged. The value is the revealed/unlocked
 // amount only, never a confidential total.
-func (c *Client) AccountBalance(ctx context.Context, account, resource string) (uint64, error) {
+func (c *Client) AccountBalance(ctx context.Context, account, resource string) (U128, error) {
 	balances, err := c.AccountBalances(ctx, account)
 	if err != nil {
-		return 0, err
+		return U128{}, err
 	}
 	for _, b := range balances {
 		if b.ResourceAddress == resource {
 			return b.RevealedBalance, nil
 		}
 	}
-	return 0, nil
+	return U128{}, nil
 }

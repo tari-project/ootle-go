@@ -24,7 +24,7 @@ func NewStealthOutput(destAccountPK, destViewPK string, amount uint64, resource 
 // revealed amounts must reconcile with the transfer's revealed-output total (the builder
 // validates this in Intent).
 func (o StealthOutputSpec) WithRevealed(amount uint64) StealthOutputSpec {
-	o.RevealedAmount = amount
+	o.RevealedAmount = U128FromUint64(amount)
 	return o
 }
 
@@ -70,8 +70,9 @@ type StealthTransferBuilder struct {
 	fee                uint64
 	inputs             []StealthTransferInput
 	outputs            []StealthOutputSpec
-	revealedInput      uint64
-	revealedOutput     uint64
+	revealedInput      U128
+	revealedOutput     U128
+	revealedOverflow   bool
 	payFeeFromRevealed bool
 	minEpoch           *uint64
 	maxEpoch           uint64
@@ -93,7 +94,7 @@ func (b *StealthTransferBuilder) Fee(microTari uint64) *StealthTransferBuilder {
 // SpendRevealedInput adds amount (µTari) to the revealed-input bucket — the plaintext value
 // drawn from the from-account's revealed vault to fund the transfer.
 func (b *StealthTransferBuilder) SpendRevealedInput(amount uint64) *StealthTransferBuilder {
-	b.revealedInput += amount
+	b.revealedInput = b.addRevealed(b.revealedInput, amount)
 	return b
 }
 
@@ -129,8 +130,15 @@ func (b *StealthTransferBuilder) ToOutput(spec StealthOutputSpec) *StealthTransf
 // self). It declares the intent-level revealed-output total; per-output WithRevealed deposits
 // must reconcile with it (the builder validates this in Intent).
 func (b *StealthTransferBuilder) ToRevealedOutput(amount uint64) *StealthTransferBuilder {
-	b.revealedOutput += amount
+	b.revealedOutput = b.addRevealed(b.revealedOutput, amount)
 	return b
+}
+
+// addRevealed adds amount to a revealed bucket, recording an overflow for Intent to report.
+func (b *StealthTransferBuilder) addRevealed(bucket U128, amount uint64) U128 {
+	sum, overflow := bucket.add(U128FromUint64(amount))
+	b.revealedOverflow = b.revealedOverflow || overflow
+	return sum
 }
 
 // PayFeeFromRevealed forces the account key to seal so the fee is paid from the from-account's
@@ -169,20 +177,26 @@ func (b *StealthTransferBuilder) DryRun() *StealthTransferBuilder {
 //   - a confidential-input spend with no revealed input must set PayFeeFromRevealed, or the
 //     account never signs the fee — a missing flag is an actionable VALIDATION error.
 func (b *StealthTransferBuilder) Intent(fee uint64) (StealthTransferIntent, error) {
-	var perOutputRevealed uint64
+	var perOutputRevealed U128
+	overflow := b.revealedOverflow
 	for _, o := range b.outputs {
-		perOutputRevealed += o.RevealedAmount
+		var of bool
+		perOutputRevealed, of = perOutputRevealed.add(o.RevealedAmount)
+		overflow = overflow || of
+	}
+	if overflow {
+		return StealthTransferIntent{}, &Error{Code: "VALIDATION", Message: "revealed amounts overflow 128 bits"}
 	}
 	if perOutputRevealed != b.revealedOutput {
 		return StealthTransferIntent{}, &Error{
 			Code: "VALIDATION",
 			Message: fmt.Sprintf(
-				"revealed-output mismatch: per-output revealed amounts sum to %d but the declared revealed-output total is %d",
+				"revealed-output mismatch: per-output revealed amounts sum to %s but the declared revealed-output total is %s",
 				perOutputRevealed, b.revealedOutput,
 			),
 		}
 	}
-	if len(b.inputs) > 0 && b.revealedInput == 0 && !b.payFeeFromRevealed {
+	if len(b.inputs) > 0 && b.revealedInput.IsZero() && !b.payFeeFromRevealed {
 		return StealthTransferIntent{}, &Error{
 			Code:    "VALIDATION",
 			Message: "confidential-input spend with no revealed input must set PayFeeFromRevealed so the account key signs the fee",

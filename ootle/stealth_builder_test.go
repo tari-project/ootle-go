@@ -34,8 +34,8 @@ func TestStealthOutput_WithOptionsChain(t *testing.T) {
 		WithMinimumValuePromise(3).
 		WithPayTo(PayToAccessRuleAllowAll)
 
-	if o.RevealedAmount != 2 {
-		t.Fatalf("RevealedAmount = %d, want 2", o.RevealedAmount)
+	if o.RevealedAmount != U128FromUint64(2) {
+		t.Fatalf("RevealedAmount = %s, want 2", o.RevealedAmount)
 	}
 	if o.Memo != memo {
 		t.Fatalf("Memo not set")
@@ -66,11 +66,11 @@ func TestStealthTransferBuilder_RevealedSums(t *testing.T) {
 		t.Fatalf("Intent: %v", err)
 	}
 
-	if intent.RevealedInputAmount != 1500 {
-		t.Fatalf("RevealedInputAmount = %d, want 1500", intent.RevealedInputAmount)
+	if intent.RevealedInputAmount != U128FromUint64(1500) {
+		t.Fatalf("RevealedInputAmount = %s, want 1500", intent.RevealedInputAmount)
 	}
-	if intent.RevealedOutputAmount != 700 {
-		t.Fatalf("RevealedOutputAmount = %d, want 700", intent.RevealedOutputAmount)
+	if intent.RevealedOutputAmount != U128FromUint64(700) {
+		t.Fatalf("RevealedOutputAmount = %s, want 700", intent.RevealedOutputAmount)
 	}
 	if intent.Fee != 50 {
 		t.Fatalf("Fee = %d, want 50", intent.Fee)

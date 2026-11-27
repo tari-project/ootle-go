@@ -117,7 +117,7 @@ func TestStealthRoundTrip(t *testing.T) {
 				PayTo:                       PayToStealthPublicKey,
 			},
 		},
-		RevealedInputAmount: amount,
+		RevealedInputAmount: U128FromUint64(amount),
 	}
 
 	// Generous deadline: build + submit + finalization on a localnet can take tens of seconds.
