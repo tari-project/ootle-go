@@ -56,7 +56,7 @@ func Run(ctx context.Context) error {
 	}
 	fmt.Printf("estimated fee = %d µTari\n", dr.EstimatedFeeOr(0))
 
-	senderBefore, err := client.AccountBalance(ctx, sender.Address, env.TariResource)
+	senderBefore, err := common.BalanceU64(ctx, client, sender.Address, env.TariResource)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func Run(ctx context.Context) error {
 	// Balance deltas: the sender drops by amount + the fees actually paid; the recipient holds
 	// exactly amount. The sums run in the core; the host only subtracts the two snapshots.
 	feesPaid := res.FeeReceipt.TotalFeesPaid
-	senderAfter, err := client.AccountBalance(ctx, sender.Address, env.TariResource)
+	senderAfter, err := common.BalanceU64(ctx, client, sender.Address, env.TariResource)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("sender delta mismatch: dropped by %d, want amount+fees=%d (amount=%d fees=%d)", got, want, amount, feesPaid)
 	}
 
-	recipBal, err := client.AccountBalance(ctx, recip.Address, env.TariResource)
+	recipBal, err := common.BalanceU64(ctx, client, recip.Address, env.TariResource)
 	if err != nil {
 		return err
 	}

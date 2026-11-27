@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,15 +44,34 @@ func (m *mockTransport) SubmitDryRun(ctx context.Context, envelopeB64 string) (j
 	if m.dryRun != nil {
 		return m.dryRun(ctx, envelopeB64)
 	}
-	return json.RawMessage(`{"Finalized":{"final_decision":"Commit"}}`), nil
+	return committedResult(), nil
 }
 
 func (m *mockTransport) GetResult(ctx context.Context, txID string) (json.RawMessage, bool, error) {
 	if m.result != nil {
 		return m.result(ctx, txID)
 	}
-	return json.RawMessage(`{"Finalized":{"final_decision":"Commit"}}`), true, nil
+	return committedResult(), true, nil
 }
+
+// committedResult is a well-formed committed indexer result: the parse_finalized_result/accept
+// vector's raw_result. The core refuses a Commit with no execution_result, so a bare
+// {"final_decision":"Commit"} stub no longer parses.
+var committedResult = sync.OnceValue(func() json.RawMessage {
+	raw, err := os.ReadFile(filepath.Join("testdata", "fixtures", "parse_finalized_result", "accept.json"))
+	if err != nil {
+		panic(err)
+	}
+	var f struct {
+		Input struct {
+			RawResult json.RawMessage `json:"raw_result"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		panic(err)
+	}
+	return f.Input.RawResult
+})
 
 // StreamFinalizedEvents makes mockTransport a finalizationStreamer. A nil hook returns an
 // immediately-closed stream, so the wait falls straight through to the REST poll — keeping
@@ -487,7 +507,7 @@ func TestConnect_BuildsClient(t *testing.T) {
 		case strings.Contains(r.URL.Path, "transactions"):
 			w.Write([]byte(`{"transaction_id":"` + fakeTxID + `"}`))
 		default:
-			w.Write([]byte(`{"Finalized":{"final_decision":"Commit"}}`))
+			w.Write(committedResult())
 		}
 	}))
 	defer srv.Close()

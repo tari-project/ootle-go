@@ -38,7 +38,7 @@ import (
 // ExpectedABIVersion is the frozen ABI tag the vendored lib must report. A mismatch
 // means the vendored lib drifted from this wrapper — fail loudly rather than
 // mis-marshal. Keep in sync with `ootle_abi_version()` in ootle_sdk.h.
-const ExpectedABIVersion = "ootle-sdk-ffi-c/20"
+const ExpectedABIVersion = "ootle-sdk-ffi-c/21"
 
 var (
 	abiOnce sync.Once
@@ -762,7 +762,7 @@ func DecodeSubstate(substateValueJSON string) (string, error) {
 // AccountBalances wraps ootle_account_balances — the per-resource REVEALED balance sum in the core.
 // accountSubstateJSON is the account Component substate value (base64 CBOR JSON string);
 // vaultSubstatesJSON is a JSON array of FetchedSubstate records ({substate_id, version, substate_value}) — the vaults the host already
-// fetched. On success it returns {"balances":[{"resource_address":...,"revealed_balance":<u64>}]};
+// fetched. On success it returns {"balances":[{"resource_address":...,"revealed_balance":{"hi":<u64>,"lo":<u64>}}]};
 // revealed balances stay native u64. The sum stays in the core (no Go arithmetic on values).
 //
 // A referenced vault not supplied is a "RESOLUTION" error, NEVER a silent zero; a non-component

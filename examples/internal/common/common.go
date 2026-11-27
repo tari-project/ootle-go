@@ -109,3 +109,17 @@ func MustCommit(label string, res ootle.FinalizedResult) error {
 	log.Printf("%s: committed tx %s", label, res.Submit.TransactionID)
 	return nil
 }
+
+// BalanceU64 reads an account's revealed balance of resource, narrowed to a u64 µTari amount so the
+// examples can do plain arithmetic on it. A balance wider than a u64 is an error.
+func BalanceU64(ctx context.Context, client *ootle.Client, account, resource string) (uint64, error) {
+	bal, err := client.AccountBalance(ctx, account, resource)
+	if err != nil {
+		return 0, err
+	}
+	v, ok := bal.Uint64()
+	if !ok {
+		return 0, fmt.Errorf("balance %s of %s does not fit a u64", bal, account)
+	}
+	return v, nil
+}

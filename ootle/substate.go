@@ -27,13 +27,13 @@ type ComponentValue struct {
 }
 
 // VaultValue is the DecodedSubstate.Value for Kind=="vault". RevealedBalance is the revealed/unlocked
-// amount only, as a native uint64 — not a confidential total. The confidential side is surfaced
+// amount only, as a U128 (the engine's full Amount width) — not a confidential total. The confidential side is surfaced
 // explicitly: ConfidentialCommitmentCount + VaultKind ("fungible"|"confidential"); a confidential
 // vault's spendable value requires scanning the relevant stealth UTXOs separately, never read this as
 // a confidential balance.
 type VaultValue struct {
 	ResourceAddress             string `json:"resource_address"`
-	RevealedBalance             uint64 `json:"revealed_balance"`
+	RevealedBalance             U128   `json:"revealed_balance"`
 	ConfidentialCommitmentCount uint64 `json:"confidential_commitment_count"`
 	VaultKind                   string `json:"kind"`
 }
@@ -46,10 +46,11 @@ type ResourceValue struct {
 
 // ResourceBalance is one resource's revealed balance for an account (an AccountBalances element). It
 // mirrors the core's ResourceBalance shape. RevealedBalance is the revealed/unlocked sum across the
-// account's vaults of this resource, as a native uint64 (no float) — not a confidential total.
+// account's vaults of this resource, as a U128 (the engine's full Amount width) — not a
+// confidential total.
 type ResourceBalance struct {
 	ResourceAddress string `json:"resource_address"`
-	RevealedBalance uint64 `json:"revealed_balance"`
+	RevealedBalance U128   `json:"revealed_balance"`
 }
 
 // accountBalancesEnvelope is the wire shape of ootle_account_balances's data JSON.
@@ -65,7 +66,7 @@ type accountBalanceWantsEnvelope struct {
 // DecodeSubstate decodes any fetched substate (the indexer's base64 CBOR substate value, a JSON
 // string) into the kind-tagged DecodedSubstate. It is a pure, stateless call — the decode lives in the core (no Go CBOR). A vault's
 // RevealedBalance is the revealed amount only. An error carries the stable core code ("PARSE" for a
-// malformed/unknown substate, "VALIDATION" for a non-u64 balance).
+// malformed/unknown substate, "VALIDATION" for a resource total supply that does not fit a u64).
 func DecodeSubstate(substateValue json.RawMessage) (DecodedSubstate, error) {
 	var out DecodedSubstate
 	dataJSON, cerr := cffi.DecodeSubstate(string(substateValue))

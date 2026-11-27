@@ -58,7 +58,8 @@ type stealthInputSpec struct {
 }
 
 // StealthOutputSpec is one confidential output. It mirrors the core's StealthOutputSpec
-// serde shape exactly (types/stealth.rs): snake_case fields, hex byte strings, u64 amounts.
+// serde shape exactly (types/stealth.rs): snake_case fields, hex byte strings, u64 output
+// amounts and a U128 revealed amount.
 // Optional fields use *T with a plain json tag (NOT omitempty): the core has no
 // #[serde(default)] on them, so the key must be present — nil marshals to null, which the
 // core accepts.
@@ -70,10 +71,9 @@ type StealthOutputSpec struct {
 	// Amount is the blinded (confidential) output value in µTari.
 	Amount uint64 `json:"amount"`
 	// RevealedAmount is the revealed (plaintext) value in µTari deposited into the recipient's
-	// account, like a normal public transfer. The core has #[serde(default)] on this field, so
-	// omitempty is safe: a zero value (no revealed deposit) is omitted and defaults to 0. The
-	// per-output revealed amounts must sum to the intent's RevealedOutputAmount.
-	RevealedAmount uint64 `json:"revealed_amount,omitempty"`
+	// account, like a normal public transfer. Zero means no revealed deposit. The per-output
+	// revealed amounts must sum to the intent's RevealedOutputAmount.
+	RevealedAmount U128 `json:"revealed_amount"`
 	// ResourceAddress is the resource of this output (resource_<hex>).
 	ResourceAddress string `json:"resource_address"`
 	// ResourceViewKey, when set (lowercase hex), drives the ElGamal viewable-balance proof.
@@ -162,7 +162,7 @@ func (m *StealthMemo) UnmarshalJSON(data []byte) error {
 
 // StealthTransferIntent is the developer-facing description of a confidential transfer. It
 // mirrors the core's StealthTransferIntent serde shape exactly (types/stealth.rs). Amounts
-// are µTari (u64).
+// are µTari: Fee is a u64, the revealed bucket amounts are U128 (the engine's full Amount width).
 //
 // Inputs are stealth UTXOs to spend (empty for a revealed-only transfer); the driver fetches
 // each one's substate before building. RevealedInputAmount / RevealedOutputAmount carry the
@@ -173,8 +173,8 @@ type StealthTransferIntent struct {
 	Fee                  uint64                 `json:"fee"`
 	Inputs               []StealthTransferInput `json:"-"`
 	Outputs              []StealthOutputSpec    `json:"outputs"`
-	RevealedInputAmount  uint64                 `json:"revealed_input_amount"`
-	RevealedOutputAmount uint64                 `json:"revealed_output_amount"`
+	RevealedInputAmount  U128                   `json:"revealed_input_amount"`
+	RevealedOutputAmount U128                   `json:"revealed_output_amount"`
 	MinEpoch             *uint64                `json:"min_epoch"`
 	// MaxEpoch is the last epoch this transfer may be sequenced in. It is MANDATORY since
 	// core 0.39.0; leave it 0 and the driver settles it from the indexer's current epoch
@@ -198,8 +198,8 @@ type intentWire struct {
 	Fee                  uint64              `json:"fee"`
 	Inputs               []stealthInputSpec  `json:"inputs"`
 	Outputs              []StealthOutputSpec `json:"outputs"`
-	RevealedInputAmount  uint64              `json:"revealed_input_amount"`
-	RevealedOutputAmount uint64              `json:"revealed_output_amount"`
+	RevealedInputAmount  U128                `json:"revealed_input_amount"`
+	RevealedOutputAmount U128                `json:"revealed_output_amount"`
 	MinEpoch             *uint64             `json:"min_epoch"`
 	MaxEpoch             uint64              `json:"max_epoch"`
 	DryRun               bool                `json:"dry_run"`

@@ -35,8 +35,8 @@ func Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("account %s balance = %d µTari\n", id.Address, bal)
-		if bal == 0 {
+		fmt.Printf("account %s balance = %s µTari\n", id.Address, bal)
+		if bal.IsZero() {
 			return fmt.Errorf("expected a positive balance after the faucet claim, got 0")
 		}
 	} else {
@@ -49,7 +49,7 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	for _, b := range balances {
-		fmt.Printf("    %s = %d µTari\n", b.ResourceAddress, b.RevealedBalance)
+		fmt.Printf("    %s = %s µTari\n", b.ResourceAddress, b.RevealedBalance)
 	}
 	return nil
 }

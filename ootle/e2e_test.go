@@ -100,7 +100,11 @@ func readRevealedBalance(ctx context.Context, t *testing.T, tr transport.Transpo
 	}
 	for _, b := range balances {
 		if b.ResourceAddress == resource {
-			return b.RevealedBalance
+			v, ok := b.RevealedBalance.Uint64()
+			if !ok {
+				t.Fatalf("e2e: balance %s of %s does not fit a u64", b.RevealedBalance, account)
+			}
+			return v
 		}
 	}
 	return 0

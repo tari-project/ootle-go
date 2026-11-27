@@ -46,7 +46,7 @@ func Run(ctx context.Context) error {
 	}
 
 	amount := ootle.Tari(2)
-	recipBefore, err := client.AccountBalance(ctx, recip.Address, env.TariResource)
+	recipBefore, err := common.BalanceU64(ctx, client, recip.Address, env.TariResource)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func Run(ctx context.Context) error {
 	fmt.Printf("created extra account: %s\n", newAcct)
 
 	// Best-effort balance check: the recipient gained the transferred amount.
-	recipAfter, err := client.AccountBalance(ctx, recip.Address, env.TariResource)
+	recipAfter, err := common.BalanceU64(ctx, client, recip.Address, env.TariResource)
 	if err != nil {
 		return err
 	}

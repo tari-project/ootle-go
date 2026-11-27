@@ -2,14 +2,14 @@
   "platform": "windows_amd64",
   "source": "release-asset",
   "monorepo_remote": "https://github.com/tari-project/tari-ootle",
-  "monorepo_commit": "221753a",
-  "release_tag": "v0.56.0",
-  "asset": "ootle_sdk_ffi_c-0.56.0-221753a-windows-x64.zip",
-  "crate_version": "0.56.0",
+  "monorepo_commit": "015986c",
+  "release_tag": "v0.57.0",
+  "asset": "ootle_sdk_ffi_c-0.57.0-015986c-windows-x64.zip",
+  "crate_version": "0.57.0",
   "abi": "ootle-sdk-ffi-c/20",
   "profile": "release",
   "strip": "(stripped upstream by tari-ootle ffi_libs.yml)",
   "native_static_libs": "-lwinapi_advapi32 -lwinapi_cfgmgr32 -lwinapi_gdi32 -lwinapi_kernel32 -lwinapi_msimg32 -lwinapi_ole32 -lwinapi_opengl32 -lwinapi_shell32 -lwinapi_user32 -lwinapi_winspool -lbcrypt -ladvapi32 -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp -lsynchronization",
-  "size_bytes": 45394762,
-  "sha256": "3197984e58eb7a7e5749571e98e4fc0e3ac9f6fd849b1d70ffab9d0bbd1bda84"
+  "size_bytes": 45420200,
+  "sha256": "2deb0939d6c1f95030ab422894f3bf9dcf0f2b354d15040deb3aee907bdf1137"
 }
