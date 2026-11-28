@@ -53,6 +53,9 @@ func (c *Client) sendInstructions(ctx context.Context, network Network, intent G
 		// max_epoch is mandatory in the core intent (both entry points); settle an unpinned one
 		// from the indexer before the build.
 		claim := *intent.faucetClaim
+		if intent.DryRun {
+			claim.DryRun = true
+		}
 		if claim.MaxEpoch, nErr = c.settleMaxEpoch(ctx, claim.MaxEpoch, derefEpoch(claim.MinEpoch)); nErr != nil {
 			return FinalizedResult{}, nErr
 		}

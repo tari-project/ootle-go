@@ -201,3 +201,18 @@ func TestStealthTransferBuilder_DryRunAndEpochs(t *testing.T) {
 		t.Fatalf("MaxEpoch = %v, want 9", intent.MaxEpoch)
 	}
 }
+
+func TestStealthTransferBuilder_FeeSetterFallback(t *testing.T) {
+	intent, err := NewStealthTransfer("component_from", "resource_tari").
+		Fee(42).
+		SpendRevealedInput(1000).
+		ToStealthOutput("recipacct", "recipview", 958).
+		Intent(0)
+	if err != nil {
+		t.Fatalf("Intent: %v", err)
+	}
+	if intent.Fee != 42 {
+		t.Fatalf("Fee = %d, want 42 from builder.Fee(42)", intent.Fee)
+	}
+}
+
