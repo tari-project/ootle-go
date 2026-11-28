@@ -95,7 +95,7 @@ func (c *Client) sendInstructions(ctx context.Context, network Network, intent G
 	}
 
 	// A dry run evaluates inline via a dedicated endpoint; the normal path submits and polls.
-	if intent.DryRun {
+	if intent.DryRun || (intent.faucetClaim != nil && intent.faucetClaim.DryRun) {
 		return c.submitDryRun(ctx, encoded)
 	}
 	return c.SubmitSealed(ctx, encoded)

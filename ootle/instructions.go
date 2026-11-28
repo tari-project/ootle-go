@@ -471,13 +471,13 @@ type GenericTransactionIntent struct {
 }
 
 // AsDryRun returns a dry-run copy of this generic intent; the receiver is left unchanged.
-// It sets the generic intent's DryRun flag. The faucet-claim path carries its own flag via
-// FaucetBuilder and is not toggled here, but the claim pointer is copied so the returned
-// intent never aliases the receiver's.
+// It sets DryRun on both the outer intent and any nested FaucetClaimIntent so faucet-claim
+// intents built via Faucet().Take().Intent(fee).AsDryRun() also evaluate as dry runs.
 func (g GenericTransactionIntent) AsDryRun() GenericTransactionIntent {
 	g.DryRun = true
 	if g.faucetClaim != nil {
 		claim := *g.faucetClaim
+		claim.DryRun = true
 		g.faucetClaim = &claim
 	}
 	return g
