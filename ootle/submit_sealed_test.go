@@ -78,3 +78,23 @@ func TestSubmitSealed_BadHexErrorsBeforeSubmit(t *testing.T) {
 		t.Errorf("error code = %q, want ENCODING", oe.Code)
 	}
 }
+
+// TestSubmitSealed_EmptyHexErrorsBeforeSubmit asserts an empty EncodedTransaction is rejected
+// with an ENCODING *Error and never submits an empty envelope to the transport.
+func TestSubmitSealed_EmptyHexErrorsBeforeSubmit(t *testing.T) {
+	mock := &mockTransport{
+		submit: func(context.Context, string) (string, error) {
+			t.Error("Submit must not be called when the envelope hex is empty")
+			return "", nil
+		},
+	}
+	c := NewClient(mock)
+	_, err := c.SubmitSealed(context.Background(), EncodedPublicTransfer{EncodedTransaction: ""})
+	var oe *Error
+	if !errors.As(err, &oe) {
+		t.Fatalf("expected *ootle.Error, got %T: %v", err, err)
+	}
+	if oe.Code != "ENCODING" {
+		t.Errorf("error code = %q, want ENCODING", oe.Code)
+	}
+}

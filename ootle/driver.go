@@ -260,6 +260,9 @@ func (c *Client) waitResult(ctx context.Context, txID string) (json.RawMessage, 
 		interval = defaultPollInterval
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		raw, finalized, err := c.transport.GetResult(ctx, txID)
 		if err != nil {
 			return nil, err
@@ -297,9 +300,16 @@ func (c *Client) resolveInputs(ctx context.Context, handle **cffi.Handle, wantLi
 		return idErr
 	}
 	for round := 0; ; round++ {
-		fetched, fErr := c.transport.FetchSubstates(ctx, ids)
-		if fErr != nil {
-			return fErr
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var fetched []transport.FetchedSubstate
+		if len(ids) > 0 {
+			var fErr error
+			fetched, fErr = c.transport.FetchSubstates(ctx, ids)
+			if fErr != nil {
+				return fErr
+			}
 		}
 		// The core expects a JSON array; a nil slice marshals to `null`, which it rejects.
 		if fetched == nil {
@@ -464,6 +474,9 @@ func hexToBase64(hexStr string) (string, error) {
 	raw, err := hex.DecodeString(hexStr)
 	if err != nil {
 		return "", &Error{Code: "ENCODING", Message: fmt.Sprintf("decode encoded transaction hex: %v", err)}
+	}
+	if len(raw) == 0 {
+		return "", &Error{Code: "ENCODING", Message: "encoded transaction hex is empty"}
 	}
 	return base64.StdEncoding.EncodeToString(raw), nil
 }
