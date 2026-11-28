@@ -153,3 +153,14 @@ func TestClientAccountBalancesTransportError(t *testing.T) {
 		t.Fatalf("expected transport error to propagate, got %v", err)
 	}
 }
+
+func TestAccountBalancesNilVaultSliceNormalizesToEmptyArray(t *testing.T) {
+	f := loadBalanceFixture(t)
+	// A nil vaults slice must marshal as "[]" (not "null", which the core rejects with PARSE)
+	// so the core reaches vault resolution and reports RESOLUTION for the fixture's missing vaults.
+	_, err := AccountBalances(f.Input.SubstateValue, nil)
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "RESOLUTION" {
+		t.Fatalf("expected RESOLUTION *Error for nil vault slice (not PARSE), got %v", err)
+	}
+}

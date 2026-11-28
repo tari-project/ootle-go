@@ -102,3 +102,53 @@ func TestTransactionBuilder_ExtraInputAndCallFunction(t *testing.T) {
 }
 
 func ptrU64(v uint64) *uint64 { return &v }
+
+func TestFaucetBuilder_MinEpochAndDryRun(t *testing.T) {
+	intent := Faucet(XtrFaucetComponentAddress).
+		Take("fea0").
+		MinEpoch(3).
+		MaxEpoch(12).
+		DryRun().
+		Intent(1500)
+	if intent.faucetClaim == nil {
+		t.Fatal("expected faucetClaim to be set")
+	}
+	if intent.faucetClaim.MinEpoch == nil || *intent.faucetClaim.MinEpoch != 3 {
+		t.Fatalf("MinEpoch = %v, want 3", intent.faucetClaim.MinEpoch)
+	}
+	if intent.faucetClaim.MaxEpoch != 12 {
+		t.Fatalf("MaxEpoch = %d, want 12", intent.faucetClaim.MaxEpoch)
+	}
+	if !intent.faucetClaim.DryRun {
+		t.Fatal("expected DryRun to be true")
+	}
+}
+
+func TestBuilders_IntentClonesSlicesAndMinEpoch(t *testing.T) {
+	txBuilder := NewTransaction().
+		PayFeeFromAccount("component_payer", 100).
+		CallMethod("component_payer", "noop").
+		ExtraInput(InputRef{SubstateID: "component_dep"}).
+		MinEpoch(7)
+	first := txBuilder.Intent()
+
+	// Mutating the returned intent or continuing to build must not mutate first.
+	*first.MinEpoch = 99
+	first.Instructions[0] = CallMethod("component_other", "mutated")
+	txBuilder.CallMethod("component_payer", "second").MinEpoch(15)
+
+	second := txBuilder.Intent()
+	if *second.MinEpoch != 15 {
+		t.Fatalf("second.MinEpoch = %d, want 15", *second.MinEpoch)
+	}
+	if len(first.Instructions) != 1 {
+		t.Fatalf("first.Instructions len = %d, want 1", len(first.Instructions))
+	}
+
+	trBuilder := NewTransfer("component_from").ToAccount("component_to").MinEpoch(4)
+	trFirst := trBuilder.Intent()
+	*trFirst.MinEpoch = 88
+	if *trBuilder.Intent().MinEpoch != 4 {
+		t.Fatalf("TransferBuilder MinEpoch mutated through returned Intent")
+	}
+}
