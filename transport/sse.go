@@ -17,11 +17,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+)
+
+const (
+	// maxSSELineBytes caps a single SSE line (1 MiB) so an unterminated line from a
+	// misbehaving or malicious indexer cannot grow bufio.Reader's accumulator without bound.
+	maxSSELineBytes = 1 << 20
+
+	// maxSSEEventBytes caps the accumulated data: payload of a single SSE frame (4 MiB)
+	// across multi-line data: fields before a blank dispatch line.
+	maxSSEEventBytes = 4 << 20
 )
 
 // RawSSEEvent is one dispatched SSE frame, handed up with its data: body left as raw
@@ -144,7 +155,7 @@ func (c *Client) openStream(ctx context.Context, full, lastEventID string) (<-ch
 		return fail(&HTTPError{Method: method, URL: full, Err: err})
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		resp.Body.Close()
 		return fail(&HTTPError{Method: method, URL: full, Status: resp.StatusCode, Body: string(body)})
 	}
@@ -209,7 +220,7 @@ func readStream(ctx context.Context, resp *http.Response, out chan<- RawSSEEvent
 	}
 
 	for {
-		line, err := r.ReadString('\n')
+		line, err := readBoundedLine(r, maxSSELineBytes)
 		// Process the line content first: a final line without a trailing newline still
 		// arrives alongside io.EOF and must be parsed before we act on the error.
 		if line != "" {
@@ -230,6 +241,18 @@ func readStream(ctx context.Context, resp *http.Response, out chan<- RawSSEEvent
 				case "id":
 					id = value
 				case "data":
+					added := len(value)
+					if hasData {
+						added++
+					}
+					if data.Len()+added > maxSSEEventBytes {
+						errs <- &HTTPError{
+							Method: http.MethodGet,
+							URL:    resp.Request.URL.String(),
+							Err:    fmt.Errorf("transport: SSE event data exceeds %d bytes", maxSSEEventBytes),
+						}
+						return
+					}
 					if hasData {
 						data.WriteByte('\n')
 					}
@@ -256,6 +279,32 @@ func readStream(ctx context.Context, resp *http.Response, out chan<- RawSSEEvent
 			return
 		}
 	}
+}
+
+// readBoundedLine reads one newline-terminated line from r while capping the total line
+// length at maxBytes. Unlike r.ReadString('\n'), it stops reading as soon as an
+// unterminated line exceeds maxBytes instead of growing an internal buffer without bound.
+func readBoundedLine(r *bufio.Reader, maxBytes int) (string, error) {
+	frag, err := r.ReadSlice('\n')
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		if len(frag) > maxBytes {
+			return "", fmt.Errorf("transport: SSE line exceeds %d bytes", maxBytes)
+		}
+		return string(frag), err
+	}
+	var b strings.Builder
+	b.Write(frag)
+	for errors.Is(err, bufio.ErrBufferFull) {
+		if b.Len() > maxBytes {
+			return "", fmt.Errorf("transport: SSE line exceeds %d bytes", maxBytes)
+		}
+		frag, err = r.ReadSlice('\n')
+		b.Write(frag)
+	}
+	if b.Len() > maxBytes {
+		return "", fmt.Errorf("transport: SSE line exceeds %d bytes", maxBytes)
+	}
+	return b.String(), err
 }
 
 // splitField splits an SSE line into its field name and value on the first ':',
